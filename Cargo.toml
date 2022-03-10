@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "builder_pattern",
+    "builder_pattern_derive",
+    "example",
+]
