@@ -3,10 +3,11 @@ extern crate proc_macro;
 
 use core::panic;
 
-use proc_macro2::{Ident, Span};
+use proc_macro2::{Ident};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    Data, DataStruct, Field, Fields, FieldsNamed, GenericArgument, PathArguments, Type, TypePath,
+    Data, DataStruct, Field, Fields, FieldsNamed, GenericArgument, Lit, Meta,
+    MetaNameValue, NestedMeta, PathArguments, Type, TypePath,
 };
 
 pub mod parts {
@@ -53,6 +54,25 @@ pub mod parts {
             Self(core::mem::ManuallyDrop::new(t))
         }
     }
+    #[repr(transparent)]
+    pub struct False(bool);
+    impl False {
+        #[inline]
+        pub const fn new() -> False {
+            Self(false)
+        }
+    }
+    impl Ready for False {}
+
+    #[repr(transparent)]
+    pub struct True(bool);
+    impl True {
+        #[inline]
+        pub const fn new() -> True {
+            Self(true)
+        }
+    }
+    impl Ready for True {}
 
     #[repr(transparent)]
     pub struct None<T>(Option<T>);
@@ -103,8 +123,10 @@ pub mod parts {
     impl<T> Ready for Default<T> {}
 }
 
-pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast: syn::DeriveInput = syn::parse(input).unwrap();
+pub fn impl_builder(
+    input: proc_macro::TokenStream,
+) -> Result<proc_macro::TokenStream, proc_macro::TokenStream> {
+    let ast: syn::DeriveInput = syn::parse(input).map_err(|err| err.to_compile_error())?;
 
     let original_name = &ast.ident;
     let original_generic_args = &ast.generics;
@@ -142,6 +164,7 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     };
 
     let initial_generic_args = builder_items.iter().map(|BuilderItem { ty, .. }| match ty {
+        BuilderItemType::Flag => quote! { ::builder_pattern::parts::False },
         BuilderItemType::Option { inner_type } => {
             quote! { ::builder_pattern::parts::None< #inner_type > }
         }
@@ -149,18 +172,19 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         BuilderItemType::Vec { inner_type, .. } => {
             quote! { ::builder_pattern::parts::Vec< #inner_type > }
         }
-        BuilderItemType::Other(ty) => quote! { ::builder_pattern::parts::Uninit< #ty > },
+        BuilderItemType::AsIs(ty) => quote! { ::builder_pattern::parts::Uninit< #ty > },
     });
     let initialize_builder_fields = {
         let initilizes = builder_items.iter().map(|BuilderItem {field_name, ty, ..}| {
             match ty {
+                BuilderItemType::Flag => quote!{ #field_name: ::builder_pattern::parts::False::new() },
                 BuilderItemType::Option { inner_type } => {
                     quote! { #field_name: ::builder_pattern::parts::None::< #inner_type > ::new() }
                 }
                 BuilderItemType::Vec { inner_type, .. } => {
                     quote! { #field_name: ::builder_pattern::parts::Vec::< #inner_type > ::new() }
                 }
-                BuilderItemType::Other(ty) => quote! { #field_name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
+                BuilderItemType::AsIs(ty) => quote! { #field_name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
             }
         });
 
@@ -168,82 +192,106 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     };
 
     let impl_setters = builder_items.iter().flat_map(|target| {
-        let target_name = target.field_name;
-        let target_type = &target.ty;
+        let target_field_name = target.field_name;
+        let target_ty = &target.ty;
+        let target_method_name = &target.method_name;
 
         let impl_generics = builder_items.iter().filter_map(|BuilderItem{field_name, generics_ident, ..}| {
-            if *field_name == target_name {
+            if *field_name == target_field_name {
                 None
             } else {
                 quote! { #generics_ident }.into()
             }
         });
-        let current_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident}| {
-            if *field_name == target_name {
+        let current_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, ..}| {
+            if *field_name == target_field_name {
                 match ty {
+                    BuilderItemType::Flag => quote!{ ::builder_pattern::parts::False },
                     BuilderItemType::Option { inner_type } => {
                         quote! { ::builder_pattern::parts::None< #inner_type > }
                     }
                     BuilderItemType::Vec { inner_type, .. } => {
                         quote! { ::builder_pattern::parts::Vec< #inner_type > }
                     }
-                    BuilderItemType::Other(ty) => quote! { ::builder_pattern::parts::Uninit< #ty >}
+                    BuilderItemType::AsIs(ty) => quote! { ::builder_pattern::parts::Uninit< #ty >}
                 }
             } else {
                 quote! { #generics_ident }
             }
         });
-        let next_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident}| {
-            if *field_name == target_name {
+        let next_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, ..}| {
+            if *field_name == target_field_name {
                 match ty {
+                    BuilderItemType::Flag => quote!{ ::builder_pattern::parts::True },
                     BuilderItemType::Option { inner_type } => {
                         quote! { ::builder_pattern::parts::Some< #inner_type > }
                     }
                     BuilderItemType::Vec { inner_type, .. } => {
                         quote! { ::builder_pattern::parts::Vec< #inner_type > }
                     }
-                    BuilderItemType::Other(ty) => quote! { ::builder_pattern::parts::Certain< #ty >}
+                    BuilderItemType::AsIs(ty) => quote! { ::builder_pattern::parts::Certain< #ty >}
                 }
             } else {
                 quote! { #generics_ident }
             }
         }).collect::<Vec<_>>();
 
-        match target_type {
-            BuilderItemType::Option { inner_type} => quote!{
+        match target_ty {
+            BuilderItemType::Flag => quote!{
                 impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
                     #[inline]
-                    pub fn #target_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
+                    pub fn #target_method_name(mut self) -> #builder_name < #(#next_builder_generic_args),* > {
                         unsafe {
                             let mut builder: #builder_name < #(#next_builder_generic_args),* > = core::mem::transmute_copy(&self);
                             core::mem::forget(self);
-                            builder.#target_name = ::builder_pattern::parts::Some::new(value);
+                            builder.#target_field_name = ::builder_pattern::parts::True::new();
                             builder
                         }
                     }
                 }
             },
-            BuilderItemType::Vec {inner_type, ..} => {
-                let target_name_append = format_ident!("{target_name}_append");
-                quote!{
+            BuilderItemType::Option { inner_type} => quote!{
                 impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
                     #[inline]
-                    pub fn #target_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
-                        self.#target_name.push(value);
-                        self
+                    pub fn #target_method_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
+                        unsafe {
+                            let mut builder: #builder_name < #(#next_builder_generic_args),* > = core::mem::transmute_copy(&self);
+                            core::mem::forget(self);
+                            builder.#target_field_name = ::builder_pattern::parts::Some::new(value);
+                            builder
+                        }
                     }
-                    pub fn #target_name_append<Iter: core::iter::IntoIterator<Item=#inner_type>>(mut self, iter: Iter) -> #builder_name < #(#next_builder_generic_args),* > {
-                        self.#target_name.extend(iter);
+                }
+            },
+            BuilderItemType::Vec {inner_type,  ..} => {
+                let each = if let Some(target_each_method_name) = &target.each_method_name {
+                    quote!{
+                        #[inline]
+                        pub fn #target_each_method_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
+                            self.#target_field_name.push(value);
+                            self
+                        }
+                    }.into()
+                } else {
+                    None
+                };
+                quote!{
+                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
+                    #each
+
+                    #[inline]
+                    pub fn #target_method_name<Iter: core::iter::IntoIterator<Item=#inner_type>>(mut self, iter: Iter) -> #builder_name < #(#next_builder_generic_args),* > {
+                        self.#target_field_name.extend(iter);
                         self
                     }
                 }}
             },
-            BuilderItemType::Other (ty) => quote!{
+            BuilderItemType::AsIs (ty) => quote!{
                 impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
                     #[inline]
-                    pub fn #target_name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
+                    pub fn #target_method_name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
                         unsafe {
-                            self.#target_name = ::builder_pattern::parts::Uninit::new(value);
+                            self.#target_field_name = ::builder_pattern::parts::Uninit::new(value);
                             let builder = core::mem::transmute_copy(&self);
                             core::mem::forget(self);
                             builder
@@ -307,7 +355,7 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     //     }
     // };
 
-    code.into()
+    Ok(code.into())
 }
 
 ///
@@ -331,22 +379,238 @@ fn fields(data: &Data) -> &FieldsNamed {
 
 struct BuilderItem<'a> {
     field_name: &'a Ident,
+    method_name: Ident,
+    each_method_name: Option<Ident>,
     ty: BuilderItemType<'a>,
     generics_ident: Ident,
 }
 impl<'a> From<&'a Field> for BuilderItem<'a> {
     fn from(field: &'a Field) -> Self {
+        let attr = field.attrs.iter().find(|attr| {
+            if let Some(name) = attr.path.segments.last() {
+                let name = &name.ident.to_string();
+                name == "builder"
+            } else {
+                false
+            }
+        });
+        struct BuilderAttribute {
+            as_is_denoted: bool,
+            name: Option<String>,
+            each: Option<String>,
+        }
+
+        let builder_attr: Option<BuilderAttribute> = if let Some(attr) = attr {
+            let meta = attr.parse_meta();
+            match meta {
+                Ok(meta) => match meta {
+                    Meta::List(list) => {
+                        let items = list
+                            .nested
+                            .iter()
+                            .map(|meta| match meta {
+                                NestedMeta::Lit(lit) => {
+                                    Err(format!("found literal '{}'", lit.to_token_stream()))
+                                }
+                                NestedMeta::Meta(meta) => match meta {
+                                    Meta::NameValue(MetaNameValue { path, lit, .. }) => {
+                                        Ok((path, Some(lit)))
+                                    }
+                                    Meta::Path(path) => Ok((path, None)),
+                                    Meta::List(list) => {
+                                        Err(format!("found list '{}'", list.into_token_stream()))
+                                    }
+                                },
+                            })
+                            .collect::<Result<Vec<_>, _>>();
+                        let items = match items {
+                            Err(why) => {
+                                panic!("{}", why);
+                            }
+                            Ok(l) => l,
+                        };
+
+                        enum ItemType {
+                            AsIs,
+                            Name,
+                            Each,
+                        }
+                        let items = items
+                            .into_iter()
+                            .map(|(path, lit)| {
+                                let path = path.segments.last().unwrap().ident.to_string();
+                                match path.as_str() {
+                                    "as_is" => Ok((ItemType::AsIs, lit)).into(),
+                                    "name" => Ok((ItemType::Name, lit)).into(),
+                                    "each" => Ok((ItemType::Each, lit)).into(),
+                                    _ => Err(format!("unexpected attribute '{}'.", path)),
+                                }
+                            })
+                            .collect::<Result<Vec<_>, _>>();
+                        let items = match items {
+                            Ok(x) => x,
+                            Err(why) => panic!("{why}"),
+                        };
+
+                        let as_is_denoted = items
+                            .iter()
+                            .filter_map(|(item_type, lit)| match item_type {
+                                ItemType::AsIs => {
+                                    if let Some(lit) = lit {
+                                        Err(format!(
+                                            "expected 'as_is', found 'as_is = {}'.",
+                                            lit.into_token_stream()
+                                        ))
+                                        .into()
+                                    } else {
+                                        Ok(()).into()
+                                    }
+                                }
+                                _ => None,
+                            })
+                            .collect::<Result<Vec<_>, _>>();
+                        let as_is_denoted = match as_is_denoted {
+                            Ok(x) => x,
+                            Err(why) => panic!("{why}"),
+                        };
+                        let as_is_denoted = as_is_denoted.into_iter().any(|_| true);
+
+                        let name = items
+                            .iter()
+                            .filter_map(|(item_type, lit)| {
+                                match item_type {
+                                    ItemType::Name => {
+                                        if let Some(lit) = lit {
+                                            match lit {
+                                                Lit::Str(str) => Ok(str.value()).into(),
+                                                _ => Err(format!(
+                                                    "expected 'name = \"method_name\"', found 'name = {}'",
+                                                    lit.into_token_stream()
+                                                )).into(),
+                                            }
+                                        } else {
+                                            Err(format!(
+                                                "expected 'name = \"method_name\"', found 'name = {}'",
+                                                lit.into_token_stream()
+                                            )).into()
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            })
+                            .collect::<Result<Vec<_>, String>>();
+                        let name = match name {
+                            Ok(x) => x,
+                            Err(why) => panic!("{why}"),
+                        };
+                        let name = name.into_iter().last().map(|s| s);
+
+                        let each = items
+                        .iter()
+                        .filter_map(|(item_type, lit)| {
+                            match item_type {
+                                ItemType::Each => {
+                                    if let Some(lit) = lit {
+                                        match lit {
+                                            Lit::Str(str) => Ok(str.value()).into(),
+                                            _ => Err(format!(
+                                                "expected 'each = \"method_name\"', found 'each = {}'",
+                                                lit.into_token_stream()
+                                            )).into(),
+                                        }
+                                    } else {
+                                        Err(format!(
+                                            "expected 'each = \"method_name\"', found 'each = {}'",
+                                            lit.into_token_stream()
+                                        )).into()
+                                    }
+                                }
+                                _ => None,
+                            }
+                        })
+                        .collect::<Result<Vec<_>, String>>();
+                        let each = match each {
+                            Ok(x) => x,
+                            Err(why) => panic!("{why}"),
+                        };
+                        let each = each.into_iter().last().map(|s| s);
+
+                        BuilderAttribute {
+                            as_is_denoted,
+                            name,
+                            each,
+                        }
+                        .into()
+                    }
+                    Meta::Path(path) => {
+                        panic!(
+                            "expected 'builder = \"setter_name\"' or 'builder(name = \"setter_name\")', found '{}'.",
+                            path.into_token_stream()
+                        );
+                    }
+                    Meta::NameValue(MetaNameValue { lit, .. }) => {
+                        if let Lit::Str(str) = lit {
+                            BuilderAttribute {
+                                as_is_denoted: false,
+                                name: str.value().into(),
+                                each: None,
+                            }
+                            .into()
+                        } else {
+                            panic!(
+                                "expected 'builder = \"setter_name\"', found 'builder = {}'.",
+                                lit.into_token_stream()
+                            );
+                        }
+                    }
+                },
+                Err(why) => {
+                    panic!("{why}",);
+                }
+            }
+        } else {
+            None
+        };
+
         let field_name = field.ident.as_ref().unwrap();
-        let generics_str = to_camel_case(&field_name.to_string());
+        let generics_ident = format_ident!("{}", to_camel_case(&field_name.to_string()));
+
+        let ty = if let Some(BuilderAttribute {
+            as_is_denoted: true,
+            ..
+        }) = builder_attr
+        {
+            BuilderItemType::AsIs(&field.ty)
+        } else {
+            BuilderItemType::from(&field.ty)
+        };
+
+        let method_name = builder_attr
+            .as_ref()
+            .and_then(|attr| attr.name.as_ref())
+            .map(|name| format_ident!("{name}"))
+            .unwrap_or_else(|| field_name.clone());
+
+        let each_method_name = match ty {
+            BuilderItemType::Vec { .. } => builder_attr
+                .as_ref()
+                .and_then(|attr| attr.each.as_ref())
+                .map(|each| format_ident!("{each}")),
+            _ => None,
+        };
+
         Self {
-            field_name: field.ident.as_ref().unwrap(),
-            ty: BuilderItemType::from(&field.ty),
-            generics_ident: Ident::new(&generics_str, Span::call_site()),
+            field_name,
+            method_name,
+            each_method_name,
+            ty,
+            generics_ident,
         }
     }
 }
 
 enum BuilderItemType<'a> {
+    Flag,
     Option {
         inner_type: &'a GenericArgument,
     },
@@ -354,14 +618,14 @@ enum BuilderItemType<'a> {
         inner_type: &'a GenericArgument,
         allocator: Option<&'a GenericArgument>,
     },
-    Other(&'a Type),
+    AsIs(&'a Type),
 }
 impl<'a> From<&'a Type> for BuilderItemType<'a> {
     fn from(ty: &'a Type) -> Self {
         let path = if let Type::Path(TypePath { qself: None, path }) = ty {
             path
         } else {
-            return BuilderItemType::Other(ty);
+            return BuilderItemType::AsIs(ty);
         };
 
         let path_str: String = path
@@ -373,13 +637,14 @@ impl<'a> From<&'a Type> for BuilderItemType<'a> {
 
         let last_seg = path.segments.iter().last().unwrap();
         match path_str {
+            maybe_bool if is_bool(&maybe_bool) => BuilderItemType::Flag,
             maybe_opt if is_option(&maybe_opt) => {
                 if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
                     BuilderItemType::Option {
                         inner_type: a.args.first().unwrap(),
                     }
                 } else {
-                    BuilderItemType::Other(ty)
+                    BuilderItemType::AsIs(ty)
                 }
             }
             maybe_vec if is_vec(&maybe_vec) => {
@@ -396,28 +661,31 @@ impl<'a> From<&'a Type> for BuilderItemType<'a> {
                         allocator,
                     }
                 } else {
-                    BuilderItemType::Other(ty)
+                    BuilderItemType::AsIs(ty)
                 }
             }
-            _other => BuilderItemType::Other(ty),
+            _other => BuilderItemType::AsIs(ty),
         }
     }
 }
 impl<'a> ToTokens for BuilderItemType<'a> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ts = match self {
+            BuilderItemType::Flag => quote! { core::primitive::bool },
             BuilderItemType::Option { inner_type } => {
                 quote! { core::option::Option< #inner_type >}
             }
             BuilderItemType::Vec {
                 inner_type,
                 allocator: None,
+                ..
             } => quote! { std::vec::Vec< #inner_type >},
             BuilderItemType::Vec {
                 inner_type,
                 allocator: Some(allocator),
+                ..
             } => quote! { std::vec::Vec< #inner_type, #allocator >},
-            BuilderItemType::Other(ty) => quote! { #ty },
+            BuilderItemType::AsIs(ty) => quote! { #ty },
         };
         tokens.extend(ts);
     }
@@ -432,6 +700,13 @@ fn is_option(path: &str) -> bool {
 
 fn is_vec(path: &str) -> bool {
     ["Vec", "std::vec::Vec"]
+        .into_iter()
+        .find(|s| *s == path)
+        .is_some()
+}
+
+fn is_bool(path: &str) -> bool {
+    ["bool", "core::primitive::bool", "std::primitive::bool"]
         .into_iter()
         .find(|s| *s == path)
         .is_some()
