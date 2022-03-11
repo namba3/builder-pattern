@@ -1,10 +1,13 @@
+#![feature(allocator_api)]
 extern crate proc_macro;
 
 use core::panic;
 
 use proc_macro2::{Ident, Span};
-use quote::quote;
-use syn::{Data, DataStruct, Fields, FieldsNamed, GenericArgument, PathArguments, Type, TypePath};
+use quote::{format_ident, quote, ToTokens};
+use syn::{
+    Data, DataStruct, Field, Fields, FieldsNamed, GenericArgument, PathArguments, Type, TypePath,
+};
 
 pub mod parts {
     /// marker trait
@@ -13,6 +16,7 @@ pub mod parts {
     #[repr(transparent)]
     pub struct Certain<T>(T);
     impl<T> Certain<T> {
+        #[inline]
         pub const fn new(t: T) -> Self {
             Self(t)
         }
@@ -40,9 +44,11 @@ pub mod parts {
     #[repr(transparent)]
     pub struct Uninit<T>(core::mem::ManuallyDrop<T>);
     impl<T> Uninit<T> {
+        #[inline]
         pub unsafe fn uninit() -> Self {
             core::mem::MaybeUninit::uninit().assume_init()
         }
+        #[inline]
         pub const unsafe fn new(t: T) -> Self {
             Self(core::mem::ManuallyDrop::new(t))
         }
@@ -51,6 +57,7 @@ pub mod parts {
     #[repr(transparent)]
     pub struct None<T>(Option<T>);
     impl<T> None<T> {
+        #[inline]
         pub const fn new() -> None<T> {
             Self(Option::None)
         }
@@ -60,6 +67,7 @@ pub mod parts {
     #[repr(transparent)]
     pub struct Some<T>(Option<T>);
     impl<T> Some<T> {
+        #[inline]
         pub const fn new(t: T) -> Self {
             Self(Option::Some(t))
         }
@@ -67,8 +75,27 @@ pub mod parts {
     impl<T> Ready for Some<T> {}
 
     #[repr(transparent)]
+    pub struct Vec<T>(std::vec::Vec<T>);
+    impl<T> Vec<T> {
+        #[inline]
+        pub const fn new() -> Self {
+            Self(std::vec::Vec::new())
+        }
+        #[inline]
+        pub fn push(&mut self, t: T) {
+            self.0.push(t);
+        }
+        #[inline]
+        pub fn extend<Iter: core::iter::IntoIterator<Item = T>>(&mut self, iter: Iter) {
+            self.0.extend(iter)
+        }
+    }
+    impl<T> Ready for Vec<T> {}
+
+    #[repr(transparent)]
     pub struct Default<T>(T);
     impl<T> Default<T> {
+        #[inline]
         pub const fn new(t: T) -> Self {
             Self(t)
         }
@@ -88,35 +115,24 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let builder_name = quote::format_ident!("{}Builder", original_name);
 
     let fields = fields(&ast.data);
-    let fields = &fields.named;
-
-    // let unit = Type::Tuple(TypeTuple {
-    //     paren_token: Paren::default(),
-    //     elems: Punctuated::new(),
-    // });
+    let builder_items = fields
+        .named
+        .iter()
+        .map(|field| BuilderItem::from(field))
+        .collect::<Vec<_>>();
 
     let builder = {
-        let builder_generics = fields
-            .iter()
-            .map(|field| {
-                let field_name = field.ident.as_ref().unwrap();
-                to_camel_case(&field_name.to_string())
-            })
-            .collect::<Vec<_>>();
+        let generics = builder_items.iter().map(|item| &item.generics_ident);
 
-        let generics = builder_generics
-            .iter()
-            .map(|g| Ident::new(&g, Span::call_site()));
-
-        let fields = fields
-            .iter()
-            .map(|field| {
-                let field_name = field.ident.as_ref().unwrap();
-                let type_name = to_camel_case(&field_name.to_string());
-                let type_name = Ident::new(&type_name, Span::call_site());
-                quote! { #field_name: #type_name }
-            })
-            .collect::<Vec<_>>();
+        let fields = builder_items.iter().map(
+            |BuilderItem {
+                 field_name,
+                 generics_ident,
+                 ..
+             }| {
+                quote! { #field_name: #generics_ident }
+            },
+        );
 
         quote! {
             struct #builder_name < #(#generics),* > {
@@ -125,91 +141,137 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
     };
 
-    let initial_generic_args = fields.iter().map(|field| {
-        let ty = &field.ty;
-        quote! { ::builder_pattern::parts::Uninit< #ty > }
+    let initial_generic_args = builder_items.iter().map(|BuilderItem { ty, .. }| match ty {
+        BuilderItemType::Option { inner_type } => {
+            quote! { ::builder_pattern::parts::None< #inner_type > }
+        }
+
+        BuilderItemType::Vec { inner_type, .. } => {
+            quote! { ::builder_pattern::parts::Vec< #inner_type > }
+        }
+        BuilderItemType::Other(ty) => quote! { ::builder_pattern::parts::Uninit< #ty > },
     });
     let initialize_builder_fields = {
-        let initilizes = fields.iter().map(|field| {
-            let name = field.ident.as_ref().unwrap();
-            let ty = &field.ty;
-            quote! { #name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
+        let initilizes = builder_items.iter().map(|BuilderItem {field_name, ty, ..}| {
+            match ty {
+                BuilderItemType::Option { inner_type } => {
+                    quote! { #field_name: ::builder_pattern::parts::None::< #inner_type > ::new() }
+                }
+                BuilderItemType::Vec { inner_type, .. } => {
+                    quote! { #field_name: ::builder_pattern::parts::Vec::< #inner_type > ::new() }
+                }
+                BuilderItemType::Other(ty) => quote! { #field_name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
+            }
         });
 
         quote! { #(#initilizes),* }
     };
 
-    let impl_setters = {
-        fields.iter().flat_map(|target| {
-            let name = target.ident.as_ref().unwrap();
-            let ty = &target.ty;
+    let impl_setters = builder_items.iter().flat_map(|target| {
+        let target_name = target.field_name;
+        let target_type = &target.ty;
 
-            let impl_generic_args = fields.iter().filter_map(|field| {
-                if field.ident == target.ident {
-                    None
-                } else {
-                    let type_name = to_camel_case(&field.ident.as_ref().unwrap().to_string());
-                    let type_name = Ident::new(&type_name, Span::call_site());
-                    quote! { #type_name }.into()
+        let impl_generics = builder_items.iter().filter_map(|BuilderItem{field_name, generics_ident, ..}| {
+            if *field_name == target_name {
+                None
+            } else {
+                quote! { #generics_ident }.into()
+            }
+        });
+        let current_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident}| {
+            if *field_name == target_name {
+                match ty {
+                    BuilderItemType::Option { inner_type } => {
+                        quote! { ::builder_pattern::parts::None< #inner_type > }
+                    }
+                    BuilderItemType::Vec { inner_type, .. } => {
+                        quote! { ::builder_pattern::parts::Vec< #inner_type > }
+                    }
+                    BuilderItemType::Other(ty) => quote! { ::builder_pattern::parts::Uninit< #ty >}
                 }
-            });
-            let current_builder_generic_args = fields.iter().map(|field| {
-                if field.ident == target.ident {
-                    let name = field.ident.as_ref().unwrap();
-                    let ty = &field.ty;
-                    quote! { ::builder_pattern::parts::Uninit::< #ty >}
-                } else {
-                    let type_name = to_camel_case(&field.ident.as_ref().unwrap().to_string());
-                    let type_name = Ident::new(&type_name, Span::call_site());
-                    quote! { #type_name }
+            } else {
+                quote! { #generics_ident }
+            }
+        });
+        let next_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident}| {
+            if *field_name == target_name {
+                match ty {
+                    BuilderItemType::Option { inner_type } => {
+                        quote! { ::builder_pattern::parts::Some< #inner_type > }
+                    }
+                    BuilderItemType::Vec { inner_type, .. } => {
+                        quote! { ::builder_pattern::parts::Vec< #inner_type > }
+                    }
+                    BuilderItemType::Other(ty) => quote! { ::builder_pattern::parts::Certain< #ty >}
                 }
-            });
-            let next_builder_generic_args = fields.iter().map(|field| {
-                if field.ident == target.ident {
-                    let name = field.ident.as_ref().unwrap();
-                    let ty = &field.ty;
-                    quote! { ::builder_pattern::parts::Certain::< #ty >}
-                } else {
-                    let type_name = to_camel_case(&field.ident.as_ref().unwrap().to_string());
-                    let type_name = Ident::new(&type_name, Span::call_site());
-                    quote! { #type_name }
-                }
-            });
+            } else {
+                quote! { #generics_ident }
+            }
+        }).collect::<Vec<_>>();
 
-            quote! {
-                impl< #(#impl_generic_args),* > #builder_name < #(#current_builder_generic_args),* > {
-                    pub fn #name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
+        match target_type {
+            BuilderItemType::Option { inner_type} => quote!{
+                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
+                    #[inline]
+                    pub fn #target_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
                         unsafe {
-                            self.#name = ::builder_pattern::parts::Uninit::new(value);
+                            let mut builder: #builder_name < #(#next_builder_generic_args),* > = core::mem::transmute_copy(&self);
+                            core::mem::forget(self);
+                            builder.#target_name = ::builder_pattern::parts::Some::new(value);
+                            builder
+                        }
+                    }
+                }
+            },
+            BuilderItemType::Vec {inner_type, ..} => {
+                let target_name_append = format_ident!("{target_name}_append");
+                quote!{
+                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
+                    #[inline]
+                    pub fn #target_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
+                        self.#target_name.push(value);
+                        self
+                    }
+                    pub fn #target_name_append<Iter: core::iter::IntoIterator<Item=#inner_type>>(mut self, iter: Iter) -> #builder_name < #(#next_builder_generic_args),* > {
+                        self.#target_name.extend(iter);
+                        self
+                    }
+                }}
+            },
+            BuilderItemType::Other (ty) => quote!{
+                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
+                    #[inline]
+                    pub fn #target_name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
+                        unsafe {
+                            self.#target_name = ::builder_pattern::parts::Uninit::new(value);
                             let builder = core::mem::transmute_copy(&self);
                             core::mem::forget(self);
                             builder
                         }
                     }
                 }
-            }
-        })
-    };
+            },
+        }
+    });
 
     let impl_final_build = {
-        let impl_generic_args = fields
+        let impl_generics = builder_items
             .iter()
-            .map(|field| {
-                let type_name = to_camel_case(&field.ident.as_ref().unwrap().to_string());
-                let type_name = Ident::new(&type_name, Span::call_site());
-                quote! { #type_name }
+            .map(|BuilderItem { generics_ident, .. }| {
+                quote! { #generics_ident }
             })
             .collect::<Vec<_>>();
-        let constraints = fields.iter().map(|field| {
-            let type_name = to_camel_case(&field.ident.as_ref().unwrap().to_string());
-            let type_name = Ident::new(&type_name, Span::call_site());
-            quote! { #type_name: ::builder_pattern::parts::Ready }
-        });
+        let constraints = builder_items
+            .iter()
+            .map(|BuilderItem { generics_ident, .. }| {
+                quote! { #generics_ident: ::builder_pattern::parts::Ready }
+            });
 
         quote! {
-            impl < #(#impl_generic_args),* > #builder_name < #(#impl_generic_args),* >
+            impl < #(#impl_generics),* > #builder_name < #(#impl_generics),* >
                 where #(#constraints),*
             {
+                #[inline]
                 pub fn build(self) -> #original_name {
                     unsafe {
                         let builder = core::mem::transmute_copy(&self);
@@ -231,13 +293,24 @@ pub fn impl_builder(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
 
         #builder
+
         #(#impl_setters)*
+
         #impl_final_build
     };
+
+    // let code = quote! {
+    //     impl #original_name {
+    //         fn builder() {
+    //             println!("{}", stringify!(#code));
+    //         }
+    //     }
+    // };
 
     code.into()
 }
 
+///
 /// extract FieldsNamed from the given struct
 ///
 fn fields(data: &Data) -> &FieldsNamed {
@@ -256,64 +329,112 @@ fn fields(data: &Data) -> &FieldsNamed {
     fields
 }
 
-fn check_option(ty: &Type) -> Option<&GenericArgument> {
-    let maybe_opt = match ty {
-        Type::Path(TypePath { qself: None, path }) => path,
-        _ => return None,
-    };
-
-    let ty: String = maybe_opt
-        .segments
-        .iter()
-        .map(|seg| seg.ident.to_string())
-        .collect::<Vec<String>>()
-        .join("::");
-
-    let is_option = ["Option", "std::option::Option", "core::option::Option"]
-        .into_iter()
-        .find(|s| s == &ty)
-        .is_some();
-    if !is_option {
-        return None;
-    }
-
-    let seg = maybe_opt.segments.iter().last().unwrap();
-    if let PathArguments::AngleBracketed(a) = &seg.arguments {
-        a.args.first().unwrap().into()
-    } else {
-        None
+struct BuilderItem<'a> {
+    field_name: &'a Ident,
+    ty: BuilderItemType<'a>,
+    generics_ident: Ident,
+}
+impl<'a> From<&'a Field> for BuilderItem<'a> {
+    fn from(field: &'a Field) -> Self {
+        let field_name = field.ident.as_ref().unwrap();
+        let generics_str = to_camel_case(&field_name.to_string());
+        Self {
+            field_name: field.ident.as_ref().unwrap(),
+            ty: BuilderItemType::from(&field.ty),
+            generics_ident: Ident::new(&generics_str, Span::call_site()),
+        }
     }
 }
 
-fn check_vec(ty: &Type) -> Option<(&GenericArgument, Option<&GenericArgument>)> {
-    let maybe_vec = match ty {
-        Type::Path(TypePath { qself: None, path }) => path,
-        _ => return None,
-    };
+enum BuilderItemType<'a> {
+    Option {
+        inner_type: &'a GenericArgument,
+    },
+    Vec {
+        inner_type: &'a GenericArgument,
+        allocator: Option<&'a GenericArgument>,
+    },
+    Other(&'a Type),
+}
+impl<'a> From<&'a Type> for BuilderItemType<'a> {
+    fn from(ty: &'a Type) -> Self {
+        let path = if let Type::Path(TypePath { qself: None, path }) = ty {
+            path
+        } else {
+            return BuilderItemType::Other(ty);
+        };
 
-    let ty: String = maybe_vec
-        .segments
-        .iter()
-        .map(|seg| seg.ident.to_string())
-        .collect::<Vec<String>>()
-        .join("::");
+        let path_str: String = path
+            .segments
+            .iter()
+            .map(|seg| seg.ident.to_string())
+            .collect::<Vec<String>>()
+            .join("::");
 
-    let is_vec = ["Vec", "std::vec::Vec"]
+        let last_seg = path.segments.iter().last().unwrap();
+        match path_str {
+            maybe_opt if is_option(&maybe_opt) => {
+                if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
+                    BuilderItemType::Option {
+                        inner_type: a.args.first().unwrap(),
+                    }
+                } else {
+                    BuilderItemType::Other(ty)
+                }
+            }
+            maybe_vec if is_vec(&maybe_vec) => {
+                if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
+                    let inner_type = a.args.first().unwrap();
+                    let allocator = a.args.iter().skip(1).take(1).last();
+
+                    if allocator.is_some() {
+                        panic!("Vec with custom allocator is not suppoted.");
+                    }
+
+                    BuilderItemType::Vec {
+                        inner_type,
+                        allocator,
+                    }
+                } else {
+                    BuilderItemType::Other(ty)
+                }
+            }
+            _other => BuilderItemType::Other(ty),
+        }
+    }
+}
+impl<'a> ToTokens for BuilderItemType<'a> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ts = match self {
+            BuilderItemType::Option { inner_type } => {
+                quote! { core::option::Option< #inner_type >}
+            }
+            BuilderItemType::Vec {
+                inner_type,
+                allocator: None,
+            } => quote! { std::vec::Vec< #inner_type >},
+            BuilderItemType::Vec {
+                inner_type,
+                allocator: Some(allocator),
+            } => quote! { std::vec::Vec< #inner_type, #allocator >},
+            BuilderItemType::Other(ty) => quote! { #ty },
+        };
+        tokens.extend(ts);
+    }
+}
+
+fn is_option(path: &str) -> bool {
+    ["Option", "std::option::Option", "core::option::Option"]
         .into_iter()
-        .find(|s| s == &ty)
-        .is_some();
-    if !is_vec {
-        return None;
-    }
+        .find(|s| *s == path)
+        .is_some()
+}
 
-    let seg = maybe_vec.segments.iter().last().unwrap();
-    if let PathArguments::AngleBracketed(a) = &seg.arguments {
-        let ty = a.args.first().unwrap();
-        let allocator = a.args.iter().skip(1).take(1).last();
-        (ty, allocator).into()
-    } else {
-        None
-    }
+fn is_vec(path: &str) -> bool {
+    ["Vec", "std::vec::Vec"]
+        .into_iter()
+        .find(|s| *s == path)
+        .is_some()
 }
 
 fn to_camel_case(str: &str) -> String {
