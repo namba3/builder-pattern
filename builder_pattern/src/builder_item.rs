@@ -1,7 +1,7 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    Error, Field, GenericArgument, Lit, Meta, MetaNameValue, NestedMeta, PathArguments, Type,
+    Error, Field, GenericArgument, Lit, Meta, MetaNameValue, NestedMeta, Path, PathArguments, Type,
     TypePath,
 };
 
@@ -23,17 +23,48 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                 false
             }
         });
-        struct BuilderAttribute {
+        struct BuilderAttribute<'a> {
             as_is_denoted: bool,
             name: Option<String>,
-            each: Option<String>,
+            each: Option<(String, &'a Path)>,
         }
 
-        let builder_attr: Option<BuilderAttribute> = if let Some(attr) = attr {
-            let meta = attr
-                .parse_meta()
-                .map_err(|err| Error::new_spanned(attr, format!("{err}")).to_compile_error())?;
-            match &meta {
+        let meta = if let Some(attr) = attr {
+            attr.parse_meta()
+                .map_err(|err| Error::new_spanned(attr, format!("{err}")).to_compile_error())?
+                .into()
+        } else {
+            None
+        };
+
+        let builder_attr: Option<BuilderAttribute> = if let Some(meta) = &meta {
+            match meta {
+                Meta::Path(path) => {
+                    return Err(Error::new_spanned(path,
+                                format!(
+                                "expected 'builder = \"setter_name\"' or 'builder(name = \"setter_name\")', found '{}'.",
+                                path.into_token_stream())
+                            ).to_compile_error());
+                }
+                Meta::NameValue(MetaNameValue { lit, .. }) => {
+                    if let Lit::Str(str) = lit {
+                        BuilderAttribute {
+                            as_is_denoted: false,
+                            name: str.value().into(),
+                            each: None,
+                        }
+                        .into()
+                    } else {
+                        return Err(Error::new_spanned(
+                            lit,
+                            format!(
+                                "expected 'builder = \"setter_name\"', found 'builder = {}'.",
+                                lit.into_token_stream()
+                            ),
+                        )
+                        .to_compile_error());
+                    }
+                }
                 Meta::List(list) => {
                     let items = list
                         .nested
@@ -64,6 +95,7 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
+                    #[derive(PartialEq, PartialOrd)]
                     enum ItemType {
                         AsIs,
                         Name,
@@ -86,9 +118,9 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let as_is_denoted = items
+                    let as_is = items
                         .iter()
-                        .filter_map(|(item_type, _path, lit)| match item_type {
+                        .filter_map(|(item_type, path, lit)| match item_type {
                             ItemType::AsIs => {
                                 if let Some(lit) = lit {
                                     Err(Error::new_spanned(
@@ -101,13 +133,24 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                                     .to_compile_error())
                                     .into()
                                 } else {
-                                    Ok(()).into()
+                                    Ok(*path).into()
                                 }
                             }
                             _ => None,
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                    let as_is_denoted = as_is_denoted.into_iter().any(|_| true);
+                    let as_is_denoted = if let Some((_first, remain)) = as_is.split_first() {
+                        if let Some(path) = remain.first() {
+                            return Err(Error::new_spanned(
+                                path,
+                                "'as_is' attribute is only allowed  once.",
+                            )
+                            .to_compile_error());
+                        }
+                        true
+                    } else {
+                        false
+                    };
 
                     let name = items
                         .iter()
@@ -115,7 +158,7 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                             ItemType::Name => {
                                 if let Some(lit) = lit {
                                     match lit {
-                                        Lit::Str(str) => Ok(str.value()).into(),
+                                        Lit::Str(str) => Ok((str.value(), *path)).into(),
                                         _ => Err(Error::new_spanned(
                                             lit,
                                             format!(
@@ -138,32 +181,55 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                             _ => None,
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                    let name = name.into_iter().last().map(|s| s);
+                    let name = if let Some((_first, remain)) = name.split_first() {
+                        if let Some((_, path)) = remain.first() {
+                            return Err(Error::new_spanned(
+                                path,
+                                "'name' attribute is only allowed once.",
+                            )
+                            .to_compile_error());
+                        }
+                        name.into_iter().take(1).last().map(|(s, _)| s)
+                    } else {
+                        None
+                    };
 
                     let each = items
-                                .iter()
-                                .filter_map(|(item_type, path, lit)| {
-                                    match item_type {
-                                        ItemType::Each => {
-                                            if let Some(lit) = lit {
-                                                match lit {
-                                                    Lit::Str(str) => Ok(str.value()).into(),
-                                                    _ => Err(Error::new_spanned(lit, format!(
-                                                        "expected 'each = \"setter_name\"', found 'each = {}'",
-                                                        lit.into_token_stream()
-                                                    )).to_compile_error()).into(),
-                                                }
-                                            } else {
-                                                Err(Error::new_spanned(path, format!(
-                                                    "expected 'each = \"setter_name\"', found 'each'",
-                                                )).to_compile_error()).into()
+                            .iter()
+                            .filter_map(|(item_type, path, lit)| {
+                                match item_type {
+                                    ItemType::Each => {
+                                        if let Some(lit) = lit {
+                                            match lit {
+                                                Lit::Str(str) => Ok((str.value(), *path)).into(),
+                                                _ => Err(Error::new_spanned(lit, format!(
+                                                    "expected 'each = \"setter_name\"', found 'each = {}'",
+                                                    lit.into_token_stream()
+                                                )).to_compile_error()).into(),
                                             }
+                                        } else {
+                                            Err(Error::new_spanned(path, format!(
+                                                "expected 'each = \"setter_name\"', found 'each'",
+                                            )).to_compile_error()).into()
                                         }
-                                        _ => None,
                                     }
-                                })
-                                .collect::<Result<Vec<_>, _>>()?;
-                    let each = each.into_iter().last().map(|s| s);
+                                    _ => None,
+                                }
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                    let each = if let Some((_first, remain)) = each.split_first() {
+                        if let Some((_, path)) = remain.first() {
+                            return Err(Error::new_spanned(
+                                path,
+                                "'each' attribute is only allowed once.",
+                            )
+                            .to_compile_error());
+                        }
+                        each.into_iter().take(1).last()
+                    } else {
+                        None
+                    };
+                    let each = each.into_iter().take(1).last().map(|s| s);
 
                     BuilderAttribute {
                         as_is_denoted,
@@ -171,32 +237,6 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                         each,
                     }
                     .into()
-                }
-                Meta::Path(path) => {
-                    return Err(Error::new_spanned(path,
-                                format!(
-                                "expected 'builder = \"setter_name\"' or 'builder(name = \"setter_name\")', found '{}'.",
-                                path.into_token_stream())
-                            ).to_compile_error());
-                }
-                Meta::NameValue(MetaNameValue { lit, .. }) => {
-                    if let Lit::Str(str) = lit {
-                        BuilderAttribute {
-                            as_is_denoted: false,
-                            name: str.value().into(),
-                            each: None,
-                        }
-                        .into()
-                    } else {
-                        return Err(Error::new_spanned(
-                            lit,
-                            format!(
-                                "expected 'builder = \"setter_name\"', found 'builder = {}'.",
-                                lit.into_token_stream()
-                            ),
-                        )
-                        .to_compile_error());
-                    }
                 }
             }
         } else {
@@ -222,12 +262,23 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
             .map(|name| format_ident!("{name}"))
             .unwrap_or_else(|| field_name.clone());
 
+        let each = builder_attr
+            .as_ref()
+            .and_then(|attr| attr.each.as_ref())
+            .map(|(each, path)| (format_ident!("{each}"), path));
         let each_method_name = match ty {
-            BuilderItemType::Vec { .. } => builder_attr
-                .as_ref()
-                .and_then(|attr| attr.each.as_ref())
-                .map(|each| format_ident!("{each}")),
-            _ => None,
+            BuilderItemType::Vec { .. } => each.map(|(each, _)| each),
+            _ => {
+                if let Some((_, path)) = each {
+                    return Err(Error::new_spanned(
+                        path,
+                        "'each' attribute is only allowed for Vec<T> fields.",
+                    )
+                    .to_compile_error());
+                } else {
+                    None
+                }
+            }
         };
 
         Ok(Self {
