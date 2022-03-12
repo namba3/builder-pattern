@@ -1,7 +1,8 @@
 #![feature(allocator_api)]
 extern crate proc_macro;
 
-use quote::quote;
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
 use syn::{Data, DataStruct, Error, Fields, FieldsNamed};
 
 mod builder_item;
@@ -17,18 +18,16 @@ pub fn impl_builder(
     let original_name = &ast.ident;
     let original_generic_args = &ast.generics;
     if 1 <= original_generic_args.params.len() {
-        return Err(Error::new_spanned(
+        return Err(to_compile_error(
             original_generic_args,
-            "structs with generic parameters are not yet suppoted.",
+            "structs with generic parameters are not yet supported.",
         )
-        .to_compile_error()
         .into());
     }
 
     let builder_name = quote::format_ident!("{}Builder", original_name);
 
-    let fields = fields(&ast.data)
-        .map_err(|message| Error::new_spanned(&ast, message).to_compile_error())?;
+    let fields = fields(&ast.data).map_err(|message| to_compile_error(&ast, message))?;
     let builder_items = fields
         .named
         .iter()
@@ -225,7 +224,7 @@ pub fn impl_builder(
 
     let code = quote! {
         impl #original_name {
-            fn builder() -> #builder_name < #(#initial_generic_args),* > {
+            pub fn builder() -> #builder_name < #(#initial_generic_args),* > {
                 #builder_name {
                     #initialize_builder_fields
                 }
@@ -269,6 +268,14 @@ fn fields(data: &Data) -> Result<&FieldsNamed, &'static str> {
         Data::Enum(_) => Err("expected struct, found enum."),
         Data::Union(_) => Err("expected struct, found union."),
     }
+}
+
+fn to_compile_error<T, U>(tokens: T, message: U) -> TokenStream
+where
+    T: ToTokens,
+    U: core::fmt::Display,
+{
+    Error::new_spanned(tokens, message).to_compile_error()
 }
 
 #[cfg(test)]
