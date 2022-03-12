@@ -10,6 +10,7 @@ struct Something {
     #[builder(name = "set_age")]
     age: u64,
 
+    has_drivers_licence: bool,
     #[builder(name = "dead")]
     is_dead: bool,
     #[builder(as_is, name = "human")]
@@ -31,6 +32,7 @@ fn main() {
         .id(100)
         .good_name("qwerty".to_string())
         .set_age(99)
+        .has_drivers_licence()
         .dead()
         .human(true)
         .another_id(1234567890)
