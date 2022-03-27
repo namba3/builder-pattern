@@ -1,11 +1,11 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    Field, GenericArgument, Lit, Meta, MetaNameValue, NestedMeta, Path, PathArguments, Type,
+    Expr, Field, GenericArgument, Lit, Meta, MetaNameValue, NestedMeta, Path, PathArguments, Type,
     TypePath,
 };
 
-use crate::to_compile_error;
+use crate::{path_to_string, to_compile_error};
 
 pub(crate) struct BuilderItem<'a> {
     pub field_name: &'a Ident,
@@ -13,6 +13,7 @@ pub(crate) struct BuilderItem<'a> {
     pub each_method_name: Option<Ident>,
     pub ty: BuilderItemType<'a>,
     pub generics_ident: Ident,
+    pub initial_expr: Option<InitialExpr>,
 }
 impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
     type Error = TokenStream;
@@ -49,16 +50,20 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
             BuilderItemType::try_from(&field.ty)?
         };
 
-        let method_name = builder_attr
-            .as_ref()
-            .and_then(|attr| attr.name.as_ref())
-            .map(|name| format_ident!("{name}"))
-            .unwrap_or_else(|| field_name.clone());
+        let (name, each, initial_expr) = if let Some(BuilderAttribute {
+            name,
+            each,
+            initial_expr,
+            ..
+        }) = builder_attr
+        {
+            (name, each, initial_expr)
+        } else {
+            (None, None, None)
+        };
 
-        let each = builder_attr
-            .as_ref()
-            .and_then(|attr| attr.each.as_ref())
-            .map(|(each, path)| (format_ident!("{each}"), path));
+        let method_name = name.unwrap_or_else(|| field_name.clone());
+
         let each_method_name = each
             .map(|(each, path)| match ty {
                 BuilderItemType::Vec { .. } => Ok(each),
@@ -69,12 +74,23 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
             })
             .transpose()?;
 
+        let initial_expr = initial_expr
+            .map(|(i, meta)| match ty {
+                BuilderItemType::Flag | BuilderItemType::Option { .. } => Err(to_compile_error(
+                    meta,
+                    "'as_is' attribute is required to specify 'default' or 'fixed' attribute for bool, Option and Vec<T> fields",
+                )),
+                _ => Ok(i),
+            })
+            .transpose()?;
+
         Ok(Self {
             field_name,
             method_name,
             each_method_name,
             ty,
             generics_ident,
+            initial_expr,
         })
     }
 }
@@ -99,15 +115,8 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
             return Ok(BuilderItemType::AsIs(ty));
         };
 
-        let path_str: String = path
-            .segments
-            .iter()
-            .map(|seg| seg.ident.to_string())
-            .collect::<Vec<String>>()
-            .join("::");
-
         let last_seg = path.segments.iter().last().unwrap();
-        let item_type = match path_str {
+        let item_type = match path {
             maybe_bool if is_bool(&maybe_bool) => BuilderItemType::Flag,
             maybe_opt if is_option(&maybe_opt) => {
                 if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
@@ -166,10 +175,16 @@ impl<'a> ToTokens for BuilderItemType<'a> {
     }
 }
 
+pub enum InitialExpr {
+    Default(Expr),
+    Fixed(Expr),
+}
+
 struct BuilderAttribute<'a> {
     as_is_denoted: bool,
-    name: Option<String>,
-    each: Option<(String, &'a Path)>,
+    name: Option<Ident>,
+    each: Option<(Ident, &'a Path)>,
+    initial_expr: Option<(InitialExpr, &'a Meta)>,
 }
 
 impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
@@ -187,8 +202,9 @@ impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
                 return if let Lit::Str(str) = lit {
                     Ok(BuilderAttribute {
                         as_is_denoted: false,
-                        name: str.value().into(),
+                        name: format_ident!("{}", str.value()).into(),
                         each: None,
+                        initial_expr: None,
                     })
                 } else {
                     Err(to_compile_error(
@@ -215,8 +231,8 @@ impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
                     ),
                 )),
                 NestedMeta::Meta(meta) => match meta {
-                    Meta::NameValue(MetaNameValue { path, lit, .. }) => Ok((path, Some(lit))),
-                    Meta::Path(path) => Ok((path, None)),
+                    Meta::NameValue(MetaNameValue { path, lit, .. }) => Ok((path, Some(lit), meta)),
+                    Meta::Path(path) => Ok((path, None, meta)),
                     Meta::List(list) => Err(to_compile_error(
                         list,
                         format!(
@@ -228,152 +244,140 @@ impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        #[derive(PartialEq, PartialOrd)]
-        enum ItemType {
-            AsIs,
-            Name,
-            Each,
-        }
-        let items = items
-            .into_iter()
-            .map(|(path, lit)| {
+        let items = items.into_iter().try_fold(
+            std::collections::HashMap::new(),
+            |mut acc, (path, lit, meta)| {
                 let name = path.segments.last().unwrap().ident.to_string();
                 match name.as_str() {
-                    "as_is" => Ok((ItemType::AsIs, path, lit)).into(),
-                    "name" => Ok((ItemType::Name, path, lit)).into(),
-                    "each" => Ok((ItemType::Each, path, lit)).into(),
+                    _name @ ("as_is" | "name" | "each" | "default" | "fixed") => {
+                        if let Some(_prev) = acc.get(&name) {
+                            Err(to_compile_error(path, format!("'{name}' attribute can be specified at most once.")))
+                        } else {
+                            let _ = acc.insert(name, (path, lit, meta));
+                            match (acc.get("default"), acc.get("fixed")) {
+                                (Some(_),Some(_)) => Err(to_compile_error(path, "specifying both 'default' and 'fixed' attributes at the same time is not allowed")),
+                                _ => Ok(acc),
+                            }
+                        }
+                    }
                     _ => Err(to_compile_error(
                         path,
-                        format!("expected 'as_is', 'name' or 'each', found '{name}'."),
+                        format!("expected 'as_is', 'name', 'each', 'default', or 'fixed',  found '{name}'."),
                     )),
                 }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            },
+        )?;
 
-        let as_is_list = items
-            .iter()
-            .filter_map(|(item_type, path, lit)| match item_type {
-                ItemType::AsIs => {
-                    if let Some(lit) = lit {
-                        Err(to_compile_error(
-                            lit,
-                            format!(
-                                "expected 'as_is', found 'as_is = {}'.",
-                                lit.into_token_stream()
-                            ),
-                        ))
-                        .into()
-                    } else {
-                        Ok(*path).into()
-                    }
-                }
-                _ => None,
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut as_is_iter = as_is_list.into_iter();
-        let as_is_denoted = as_is_iter.next().is_some();
-        if let Some(path) = as_is_iter.next() {
-            return Err(to_compile_error(
-                path,
-                "'as_is' attribute is only allowed  once.",
-            ));
-        }
+        let as_is_denoted = items
+            .get("as_is")
+            .map(|x| expect_flag(x, "as_is"))
+            .transpose()?
+            .is_some();
 
-        let name_list = items
-            .iter()
-            .filter_map(|(item_type, path, lit)| match item_type {
-                ItemType::Name => {
-                    if let Some(lit) = lit {
-                        match lit {
-                            Lit::Str(str) => Ok((str.value(), *path)).into(),
-                            _ => Err(to_compile_error(
-                                lit,
-                                format!(
-                                    "expected '\"setter_name\"', found '{}'",
-                                    lit.into_token_stream()
-                                ),
-                            ))
-                            .into(),
-                        }
-                    } else {
-                        Err(to_compile_error(
-                            path,
-                            format!("expected 'name = \"setter_name\"', found 'name'",),
-                        ))
-                        .into()
-                    }
-                }
-                _ => None,
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut name_iter = name_list.into_iter();
-        let name = name_iter.next().map(|(name, _)| name);
-        if let Some((_, path)) = name_iter.next() {
-            return Err(to_compile_error(
-                path,
-                "'name' attribute is only allowed once.",
-            ));
-        }
+        let name = items
+            .get("name")
+            .map(|x| expect_string_literal(x, "name", "setter_name"))
+            .transpose()?
+            .map(|(name, ..)| format_ident!("{name}"));
 
-        let each_list = items
-            .iter()
-            .filter_map(|(item_type, path, lit)| match item_type {
-                ItemType::Each => {
-                    if let Some(lit) = lit {
-                        match lit {
-                            Lit::Str(str) => Ok((str.value(), *path)).into(),
-                            _ => Err(to_compile_error(
-                                lit,
-                                format!(
-                                    "expected 'each = \"setter_name\"', found 'each = {}'",
-                                    lit.into_token_stream()
-                                ),
-                            ))
-                            .into(),
-                        }
-                    } else {
-                        Err(to_compile_error(
-                            path,
-                            format!("expected 'each = \"setter_name\"', found 'each'",),
-                        ))
-                        .into()
-                    }
-                }
-                _ => None,
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut each_iter = each_list.into_iter();
-        let each = each_iter.next();
-        if let Some((_, path)) = each_iter.next() {
-            return Err(to_compile_error(
-                path,
-                "'each' attribute is only allowed once.",
-            ));
-        }
+        let each = items
+            .get("each")
+            .map(|x| expect_string_literal(x, "each", "setter_name"))
+            .transpose()?
+            .map(|(each, path, ..)| (format_ident!("{each}"), path));
+
+        let default = items
+            .get("default")
+            .map(|x| expect_string_literal(x, "default", "expression"))
+            .transpose()?
+            .map(|(expr, _, lit, meta)| parse_expr(&expr, lit).map(|e| (e, lit, meta)))
+            .transpose()?;
+
+        let fixed = items
+            .get("fixed")
+            .map(|x| expect_string_literal(x, "fixed", "expression"))
+            .transpose()?
+            .map(|(expr, _, lit, meta)| parse_expr(&expr, lit).map(|e| (e, lit, meta)))
+            .transpose()?;
+        let initial_expr = match (default, fixed) {
+            (Some((expr, _, meta)), None) => (InitialExpr::Default(expr), meta).into(),
+            (None, Some((expr, _, meta))) => (InitialExpr::Fixed(expr), meta).into(),
+            _ => None,
+        };
 
         Ok(BuilderAttribute {
             as_is_denoted,
             name,
             each,
+            initial_expr,
         })
     }
 }
 
-fn is_option(path: &str) -> bool {
+fn parse_expr<'a>(expr: &str, lit: &'a Lit) -> Result<Expr, TokenStream> {
+    syn::parse_str(expr).map_err(|err| to_compile_error(lit, err))
+}
+
+fn expect_flag<'a>(
+    (path, lit, meta): &(&'a Path, Option<&Lit>, &Meta),
+    attr_name: &str,
+) -> Result<&'a Path, TokenStream> {
+    if let Some(lit) = lit {
+        Err(to_compile_error(
+            meta,
+            format!(
+                "expected '{attr_name}', found '{attr_name} = {}'.",
+                lit.into_token_stream()
+            ),
+        ))
+        .into()
+    } else {
+        Ok(path)
+    }
+}
+
+fn expect_string_literal<'a>(
+    (path, lit, meta): &(&'a Path, Option<&'a Lit>, &'a Meta),
+    attr_name: &str,
+    value_name: &str,
+) -> Result<(String, &'a Path, &'a Lit, &'a Meta), TokenStream> {
+    if let Some(lit) = lit {
+        match lit {
+            Lit::Str(str) => Ok((str.value(), path, *lit, meta)),
+            _ => Err(to_compile_error(
+                lit,
+                format!(
+                    "expected '\"{value_name}\"', found '{}'",
+                    lit.into_token_stream()
+                ),
+            )),
+        }
+    } else {
+        Err(to_compile_error(
+            path,
+            format!("expected '{attr_name} = \"{value_name}\"', found '{attr_name}'",),
+        ))
+    }
+}
+
+fn is_option(path: &Path) -> bool {
+    let path = path_to_string(path, "::");
     ["Option", "std::option::Option", "core::option::Option"]
         .into_iter()
         .find(|s| *s == path)
         .is_some()
 }
 
-fn is_vec(path: &str) -> bool {
+fn is_vec(path: &Path) -> bool {
+    let path = path_to_string(path, "::");
     ["Vec", "std::vec::Vec"]
         .into_iter()
         .find(|s| *s == path)
         .is_some()
 }
 
-fn is_bool(path: &str) -> bool {
+fn is_bool(path: &Path) -> bool {
+    let path = path_to_string(path, "::");
     ["bool", "core::primitive::bool", "std::primitive::bool"]
         .into_iter()
         .find(|s| *s == path)

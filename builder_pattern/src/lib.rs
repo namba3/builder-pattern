@@ -1,14 +1,13 @@
-#![feature(allocator_api)]
 extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{Data, DataStruct, Error, Fields, FieldsNamed};
+use syn::{Data, DataStruct, Error, Fields, FieldsNamed, Path};
 
 mod builder_item;
 pub mod parts;
 
-use builder_item::{BuilderItem, BuilderItemType};
+use crate::builder_item::{BuilderItem, BuilderItemType, InitialExpr};
 
 pub fn impl_builder(
     input: proc_macro::TokenStream,
@@ -24,6 +23,11 @@ pub fn impl_builder(
         )
         .into());
     }
+
+    let repr = ast
+        .attrs
+        .iter()
+        .find(|a| path_to_string(&a.path, "::").as_str() == "repr");
 
     let builder_name = quote::format_ident!("{}Builder", original_name);
 
@@ -48,25 +52,36 @@ pub fn impl_builder(
         );
 
         quote! {
+            #repr
             struct #builder_name < #(#generics),* > {
                 #(#fields,)*
             }
         }
     };
 
-    let initial_generic_args = builder_items.iter().map(|BuilderItem { ty, .. }| match ty {
-        BuilderItemType::Flag => quote! { ::builder_pattern::parts::False },
-        BuilderItemType::Option { inner_type } => {
-            quote! { ::builder_pattern::parts::None< #inner_type > }
-        }
+    let initial_generic_args = builder_items.iter().map(
+        |BuilderItem {
+             ty, initial_expr, ..
+         }| match ty {
+            BuilderItemType::Flag => quote! { ::builder_pattern::parts::False },
+            BuilderItemType::Option { inner_type } => {
+                quote! { ::builder_pattern::parts::None< #inner_type > }
+            }
 
-        BuilderItemType::Vec { inner_type, .. } => {
-            quote! { ::builder_pattern::parts::Vec< #inner_type > }
-        }
-        BuilderItemType::AsIs(ty) => quote! { ::builder_pattern::parts::Uninit< #ty > },
-    });
+            BuilderItemType::Vec { inner_type, .. } => {
+                quote! { ::builder_pattern::parts::Vec< #inner_type > }
+            }
+            BuilderItemType::AsIs(ty) => match initial_expr {
+                Some(InitialExpr::Default(_)) => {
+                    quote! { ::builder_pattern::parts::Default< #ty > }
+                }
+                Some(InitialExpr::Fixed(_)) => quote! { ::builder_pattern::parts::Fixed< #ty > },
+                None => quote! { ::builder_pattern::parts::Uninit< #ty > },
+            },
+        },
+    );
     let initialize_builder_fields = {
-        let initilizes = builder_items.iter().map(|BuilderItem {field_name, ty, ..}| {
+        let initilizes = builder_items.iter().map(|BuilderItem {field_name, ty, initial_expr, ..}| {
             match ty {
                 BuilderItemType::Flag => quote!{ #field_name: ::builder_pattern::parts::False::new() },
                 BuilderItemType::Option { inner_type } => {
@@ -75,14 +90,25 @@ pub fn impl_builder(
                 BuilderItemType::Vec { inner_type, .. } => {
                     quote! { #field_name: ::builder_pattern::parts::Vec::< #inner_type > ::new() }
                 }
-                BuilderItemType::AsIs(ty) => quote! { #field_name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
+                BuilderItemType::AsIs(ty) => match initial_expr {
+                    Some(InitialExpr::Default(expr)) => {
+                        quote! { #field_name: ::builder_pattern::parts::Default::< #ty >::new( { #expr } ) }
+                    }
+                    Some(InitialExpr::Fixed(expr)) => quote! { #field_name: ::builder_pattern::parts::Fixed::< #ty >::new( { #expr } )},
+                    None => quote! { #field_name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
+                }
             }
         });
 
         quote! { #(#initilizes),* }
     };
 
-    let impl_setters = builder_items.iter().flat_map(|target| {
+    let impl_setters = builder_items.iter().filter(|BuilderItem{ty, initial_expr, ..}| {
+        match (ty, initial_expr) {
+            (BuilderItemType::AsIs(_), Some(InitialExpr::Fixed(_))) => false,
+            _ => true,
+        }
+    }).map(|target| {
         let target_field_name = target.field_name;
         let target_ty = &target.ty;
         let target_method_name = &target.method_name;
@@ -94,7 +120,7 @@ pub fn impl_builder(
                 quote! { #generics_ident }.into()
             }
         });
-        let current_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, ..}| {
+        let current_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, initial_expr, ..}| {
             if *field_name == target_field_name {
                 match ty {
                     BuilderItemType::Flag => quote!{ ::builder_pattern::parts::False },
@@ -104,13 +130,19 @@ pub fn impl_builder(
                     BuilderItemType::Vec { inner_type, .. } => {
                         quote! { ::builder_pattern::parts::Vec< #inner_type > }
                     }
-                    BuilderItemType::AsIs(ty) => quote! { ::builder_pattern::parts::Uninit< #ty >}
+                    BuilderItemType::AsIs(ty) => match initial_expr {
+                        Some(InitialExpr::Default(_)) => {
+                            quote! { ::builder_pattern::parts::Default< #ty > }
+                        }
+                        Some(InitialExpr::Fixed(_)) => unreachable!(),
+                        None => quote! { ::builder_pattern::parts::Uninit< #ty > },
+                    },
                 }
             } else {
                 quote! { #generics_ident }
             }
         });
-        let next_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, ..}| {
+        let next_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, initial_expr, ..}| {
             if *field_name == target_field_name {
                 match ty {
                     BuilderItemType::Flag => quote!{ ::builder_pattern::parts::True },
@@ -120,7 +152,13 @@ pub fn impl_builder(
                     BuilderItemType::Vec { inner_type, .. } => {
                         quote! { ::builder_pattern::parts::Vec< #inner_type > }
                     }
-                    BuilderItemType::AsIs(ty) => quote! { ::builder_pattern::parts::Certain< #ty >}
+                    BuilderItemType::AsIs(ty) => match initial_expr {
+                        Some(InitialExpr::Default(_)) => {
+                            quote! { ::builder_pattern::parts::Certain< #ty > }
+                        }
+                        Some(InitialExpr::Fixed(_)) => unreachable!(),
+                        None => quote! { ::builder_pattern::parts::Certain< #ty > },
+                    },
                 }
             } else {
                 quote! { #generics_ident }
@@ -177,19 +215,26 @@ pub fn impl_builder(
                     }
                 }}
             },
-            BuilderItemType::AsIs (ty) => quote!{
-                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
-                    #[inline]
-                    pub fn #target_method_name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
-                        unsafe {
-                            self.#target_field_name = ::builder_pattern::parts::Uninit::new(value);
-                            let builder = core::mem::transmute_copy(&self);
-                            core::mem::forget(self);
-                            builder
+            BuilderItemType::AsIs (ty) => {
+                let assignment = match target.initial_expr {
+                    Some(InitialExpr::Default(_)) => quote!{ self.#target_field_name = ::builder_pattern::parts::Default::new(value); },
+                    Some(InitialExpr::Fixed(_)) => unreachable!(),
+                    None => quote!{ self.#target_field_name = ::builder_pattern::parts::Uninit::new(value); },
+                };
+                quote!{
+                    impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
+                        #[inline]
+                        pub fn #target_method_name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
+                            unsafe {
+                                #assignment
+                                let builder = core::mem::transmute_copy(&self);
+                                core::mem::forget(self);
+                                builder
+                            }
                         }
                     }
                 }
-            },
+            }
         }
     });
 
@@ -250,7 +295,7 @@ pub fn impl_builder(
 }
 
 ///
-/// extract FieldsNamed from the given struct
+/// Extract the fields from the given structure definition
 ///
 fn fields(data: &Data) -> Result<&FieldsNamed, &'static str> {
     match data {
@@ -270,12 +315,26 @@ fn fields(data: &Data) -> Result<&FieldsNamed, &'static str> {
     }
 }
 
+///
+/// Generate a token stream representing a compilation error from tokens and message
+///
 fn to_compile_error<T, U>(tokens: T, message: U) -> TokenStream
 where
     T: ToTokens,
     U: core::fmt::Display,
 {
     Error::new_spanned(tokens, message).to_compile_error()
+}
+
+///
+/// Convert path to string
+///
+fn path_to_string(path: &Path, separater: &str) -> String {
+    path.segments
+        .iter()
+        .map(|seg| seg.ident.to_string())
+        .collect::<Vec<_>>()
+        .join(separater)
 }
 
 #[cfg(test)]

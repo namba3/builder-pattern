@@ -3,11 +3,7 @@ name = "builder_pattern"
 version = "0.1.0"
 edition = "2021"
 
-[[example]]
-name = "example_1"
-path = "./example/example_1.rs"
-
 [dependencies]
-syn = "1"
+syn = { version = "1", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"

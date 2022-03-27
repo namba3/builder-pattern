@@ -13,19 +13,19 @@ impl<T> Ready for Certain<T> {}
 
 /// behaves like core::mem::MaybeUninit.
 /// The inner data will be ignored with code::mem::forget when drops,
-/// so you MUST use core::mem::transmute or something to safely drop the inner data
+/// so you MUST use core::mem::transmute or something to safely drop the inner data.
 ///
 /// # Exmple
 /// ```
-/// use crate::Uninit;
+/// use builder_pattern::parts::Uninit;
 ///
 /// fn main() {
 ///     let data = unsafe { Uninit::<String>::uninit() };
 ///     drop(data); // ok
 ///
-///     let data = Uninit::new(String::from("test"));
+///     let data = unsafe { Uninit::new(String::from("test")) };
 ///     // drop(data); // leaks inner string!!!
-///     let data: String = unsafe{ core::memm::transmute(data) }; // transmute
+///     let data: String = unsafe{ core::mem::transmute(data) }; // transmute
 ///     drop(data); // ok, not leaks the string
 /// }
 /// ```
@@ -108,3 +108,13 @@ impl<T> Default<T> {
     }
 }
 impl<T> Ready for Default<T> {}
+
+#[repr(transparent)]
+pub struct Fixed<T>(T);
+impl<T> Fixed<T> {
+    #[inline]
+    pub const fn new(t: T) -> Self {
+        Self(t)
+    }
+}
+impl<T> Ready for Fixed<T> {}

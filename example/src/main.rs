@@ -1,9 +1,8 @@
 use builder_pattern_derive::Builder;
 
-#[allow(dead_code)]
 #[derive(Builder, Debug)]
+#[repr(C)]
 struct Something {
-    // #[builder]
     id: u64,
     #[builder = "good_name"]
     name: String,
@@ -25,6 +24,23 @@ struct Something {
     nums: Vec<u64>,
     #[builder(as_is)]
     bools: Vec<bool>,
+
+    #[builder(default = "100")]
+    val1: u8,
+    #[builder(default = "100")]
+    val2: u8,
+
+    #[builder(fixed = "[0,1,2,3]")]
+    reserved1: [u8; 4],
+    #[builder(fixed = "init_reserved2()")]
+    reserved2: [u8; 4],
+
+    #[builder(fixed = r#"String::from("z")"#)]
+    z: String,
+}
+
+fn init_reserved2() -> [u8; 4] {
+    [3, 2, 1, 0]
 }
 
 fn main() {
@@ -44,6 +60,7 @@ fn main() {
         .nums_append([3, 4, 5])
         .nums_append([6, 7])
         .bools(vec![false, true, false, true])
+        .val2(111)
         .build();
 
     println!("{s:?}");
