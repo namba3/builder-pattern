@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use builder_pattern_derive::Builder;
 use std::{
     hint::black_box,
@@ -85,7 +87,7 @@ fn main() {
                 .third(black_box(3))
                 .fourth(black_box(4))
                 .build();
-            value.first + value.second + value.third + value.fourth
+            value
         },
     );
 
@@ -100,23 +102,20 @@ fn main() {
                 third: black_box(3),
                 fourth: black_box(4),
             };
-            value.first + value.second + value.third + value.fourth
+            value
         },
     );
 
     measure("derive builder / Vec items", warmup, iterations, || {
-        let value = Items::builder()
+        Items::builder()
             .item(black_box(1))
             .item(black_box(2))
             .item(black_box(3))
             .item(black_box(4))
-            .build();
-        value.items.iter().sum::<u64>()
+            .build()
     });
 
     measure("Vec literal / Vec items", warmup, iterations, || {
         vec![black_box(1), black_box(2), black_box(3), black_box(4)]
-            .iter()
-            .sum::<u64>()
     });
 }
