@@ -1,0 +1,5 @@
+error: setter name `type` is generated more than once; each generated builder method must have a unique name.
+ --> tests/ui/duplicate_raw_setter_name.rs:7:5
+  |
+7 |     r#type: u8,
+  |     ^^^^^^
