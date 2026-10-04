@@ -168,6 +168,7 @@ pub(crate) fn impl_builder_with_support_path(
         };
 
         quote! {
+            #[allow(missing_docs)]
             #[must_use = "call `build()` to construct the value"]
             #original_visibility struct #builder_name #builder_generics #builder_where_clause {
                 #(#fields,)*
@@ -286,6 +287,7 @@ pub(crate) fn impl_builder_with_support_path(
 
             match target_ty {
                 BuilderItemType::Flag => quote! {
+                    #[allow(missing_docs)]
                     impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                         #[inline]
                         pub fn #target_method_name(self) -> #builder_name<#(#next_builder_generic_args),*> {
@@ -295,6 +297,7 @@ pub(crate) fn impl_builder_with_support_path(
                     }
                 },
                 BuilderItemType::Option { inner_type } => quote! {
+                    #[allow(missing_docs)]
                     impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                         #[inline]
                         pub fn #target_method_name(self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
@@ -312,6 +315,7 @@ pub(crate) fn impl_builder_with_support_path(
                         }
                     });
                     quote! {
+                        #[allow(missing_docs)]
                         impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                             #each
 
@@ -324,6 +328,7 @@ pub(crate) fn impl_builder_with_support_path(
                     }
                 }
                 BuilderItemType::AsIs(ty) => quote! {
+                    #[allow(missing_docs)]
                     impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                         #[inline]
                         pub fn #target_method_name(self, #value_ident: #ty) -> #builder_name<#(#next_builder_generic_args),*> {
@@ -386,6 +391,7 @@ pub(crate) fn impl_builder_with_support_path(
         );
 
         quote! {
+            #[allow(missing_docs)]
             impl #build_impl_generics #builder_name<#(#builder_type_args),*> #build_where_clause
             {
                 #[inline]
@@ -400,6 +406,7 @@ pub(crate) fn impl_builder_with_support_path(
     };
 
     let code = quote! {
+        #[allow(missing_docs)]
         impl #original_impl_generics #original_name #original_type_generics #original_where_clause {
             #original_visibility fn builder() -> #builder_name < #(#initial_builder_args),* > {
                 #builder_name {
