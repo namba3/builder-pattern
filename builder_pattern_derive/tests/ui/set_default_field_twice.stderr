@@ -1,0 +1,11 @@
+error[E0599]: no method named `value` found for struct `RecordBuilder<Certain<u8>>` in the current scope
+  --> tests/ui/set_default_field_twice.rs:10:46
+   |
+ 3 | #[derive(Builder)]
+   |          ------- method `value` not found for this struct
+...
+10 |     let _record = Record::builder().value(2).value(3).build();
+   |                   -----------------          ^^^^^--- help: remove the arguments
+   |                   |                          |
+   |                   |                          field, not a method
+   |                   method `value` is available on `RecordBuilder<builder_pattern::parts::Default<u8>>`

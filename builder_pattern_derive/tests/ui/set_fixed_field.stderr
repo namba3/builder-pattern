@@ -1,0 +1,10 @@
+error[E0599]: no method named `value` found for struct `RecordBuilder<__BuilderState0>` in the current scope
+  --> tests/ui/set_fixed_field.rs:10:37
+   |
+ 3 | #[derive(Builder)]
+   |          ------- method `value` not found for this struct
+...
+10 |     let _record = Record::builder().value(2).build();
+   |                                     ^^^^^--- help: remove the arguments
+   |                                     |
+   |                                     field, not a method
