@@ -366,6 +366,8 @@ fn legacy_string_expressions_remain_supported() {
         fixed: u8,
         #[builder(default = { let text = "native string literal"; text })]
         text: &'static str,
+        #[builder(fixed = { let text = "fixed string literal"; text })]
+        fixed_text: &'static str,
     }
 
     let s = S::builder().build();
@@ -373,6 +375,7 @@ fn legacy_string_expressions_remain_supported() {
     assert_eq!(s.defaulted, 4);
     assert_eq!(s.fixed, 8);
     assert_eq!(s.text, "native string literal");
+    assert_eq!(s.fixed_text, "fixed string literal");
 }
 
 #[test]
