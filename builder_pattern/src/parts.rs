@@ -21,9 +21,10 @@ impl<T> Ready<T> for Certain<T> {
 ///
 /// Dropping this wrapper never drops a stored T. Builder transitions must
 /// move initialized storage into its initialized state so the value is dropped
-/// exactly once.
+/// exactly once. If this wrapper contains a value created with `new`, dropping
+/// it without first extracting the value leaks that value.
 ///
-/// # Exmple
+/// # Example
 /// ```
 /// use builder_pattern::parts::Uninit;
 ///
@@ -34,7 +35,7 @@ impl<T> Ready<T> for Certain<T> {
 ///     let data = Uninit::new(String::from("test"));
 ///     // Transfer the initialized value before dropping the wrapper.
 ///     let data: String = unsafe { data.assume_init() };
-///     drop(data); // ok, not leaks the string
+///     drop(data); // ok, the string is dropped normally
 /// }
 /// ```
 #[repr(transparent)]
