@@ -1,0 +1,5 @@
+error: #[builder(...)] attributes are only supported on fields.
+ --> tests/ui/builder_attribute_on_struct.rs:4:1
+  |
+4 | #[builder(name = "create")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^

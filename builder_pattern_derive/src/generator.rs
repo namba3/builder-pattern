@@ -92,6 +92,19 @@ pub(crate) fn impl_builder_with_support_path(
     support_crate_path: &str,
 ) -> Result<proc_macro::TokenStream, proc_macro::TokenStream> {
     let ast: syn::DeriveInput = syn::parse(input).map_err(|err| err.to_compile_error())?;
+    if let Some(attr) = ast.attrs.iter().find(|attr| {
+        attr.path()
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "builder")
+    }) {
+        return Err(to_compile_error(
+            attr,
+            "#[builder(...)] attributes are only supported on fields.",
+        )
+        .into());
+    }
+
     let support_crate_path = syn::parse_str::<Path>(support_crate_path)
         .map_err(|err| proc_macro::TokenStream::from(err.to_compile_error()))?;
     let parts_path = quote!(#support_crate_path::parts);
