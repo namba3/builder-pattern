@@ -221,3 +221,17 @@ struct S {
 let s = S::builder().build();
 assert_eq!(s.a, 4);
 ```
+
+## ベンチマーク
+
+nightly のベンチマーク機能を使わず、`std::time::Instant` と `std::hint::black_box` で計測します。release モードで実行してください。
+
+```sh
+cargo bench -p example --bench builder
+```
+
+計測回数は `BENCH_ITERS` で変更できます（既定値は `1_000_000`）。計測前に最大 10,000 回のウォームアップを行います。
+
+```sh
+BENCH_ITERS=100000 cargo bench -p example --bench builder
+```

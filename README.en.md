@@ -223,3 +223,17 @@ struct S {
 let s = S::builder().build();
 assert_eq!(s.a, 4);
 ```
+
+## Benchmarks
+
+The benchmark uses `std::time::Instant` and `std::hint::black_box` without nightly's benchmark feature. Run it in release mode.
+
+```sh
+cargo bench -p example --bench builder
+```
+
+Set `BENCH_ITERS` to change the number of measured iterations (default: `1_000_000`). It warms up for up to 10,000 iterations before measuring.
+
+```sh
+BENCH_ITERS=100000 cargo bench -p example --bench builder
+```
