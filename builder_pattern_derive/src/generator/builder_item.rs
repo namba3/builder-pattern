@@ -150,13 +150,8 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
 
 pub(crate) enum BuilderItemType<'a> {
     Flag,
-    Option {
-        inner_type: &'a GenericArgument,
-    },
-    Vec {
-        inner_type: &'a GenericArgument,
-        allocator: Option<&'a GenericArgument>,
-    },
+    Option { inner_type: &'a GenericArgument },
+    Vec { inner_type: &'a GenericArgument },
     AsIs(&'a Type),
 }
 impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
@@ -196,7 +191,6 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
 
                     BuilderItemType::Vec {
                         inner_type: single_type_argument(a, ty, "Vec")?,
-                        allocator: None,
                     }
                 } else {
                     BuilderItemType::AsIs(ty)
@@ -231,16 +225,7 @@ impl<'a> ToTokens for BuilderItemType<'a> {
             BuilderItemType::Option { inner_type } => {
                 quote! { ::core::option::Option< #inner_type >}
             }
-            BuilderItemType::Vec {
-                inner_type,
-                allocator: None,
-                ..
-            } => quote! { ::std::vec::Vec< #inner_type >},
-            BuilderItemType::Vec {
-                inner_type,
-                allocator: Some(allocator),
-                ..
-            } => quote! { ::std::vec::Vec< #inner_type, #allocator >},
+            BuilderItemType::Vec { inner_type } => quote! { ::std::vec::Vec< #inner_type >},
             BuilderItemType::AsIs(ty) => quote! { #ty },
         };
         tokens.extend(ts);
