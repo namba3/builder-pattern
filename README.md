@@ -271,3 +271,7 @@ BENCH_ITERS=100000 BENCH_SAMPLES=15 cargo bench -p example --bench builder
 ```
 
 `BENCH_SAMPLES` でサンプル数を変更できます。
+
+## ライセンス
+
+このプロジェクトは [MIT License](LICENSE-MIT) または [Apache License 2.0](LICENSE-APACHE) のいずれかの条件で利用できます。MIT License の著作者表記は GitHub アカウント [@namba3](https://github.com/namba3) です。

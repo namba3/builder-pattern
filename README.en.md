@@ -271,3 +271,7 @@ BENCH_ITERS=100000 BENCH_SAMPLES=15 cargo bench -p example --bench builder
 ```
 
 Set `BENCH_SAMPLES` to change the sample count.
+
+## License
+
+This project is licensed under either the [MIT License](LICENSE-MIT) or the [Apache License, Version 2.0](LICENSE-APACHE), at your option. The MIT License copyright attribution is to the GitHub account [@namba3](https://github.com/namba3).
