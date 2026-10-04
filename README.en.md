@@ -90,7 +90,7 @@ S::builder()
 ## Special fields
 
 `bool`, `Option`, and `Vec` fields are treated specially.
-Detection is based on path spelling and does not expand type aliases. The recognized paths are `bool` / `core::primitive::bool` / `std::primitive::bool`, `Option` / `core::option::Option` / `std::option::Option`, and `Vec` / `std::vec::Vec`. Type aliases are treated as ordinary required fields.
+Detection is based on path spelling and does not expand type aliases. The recognized paths are `bool` / `core::primitive::bool` / `std::primitive::bool`, `Option` / `core::option::Option` / `std::option::Option`, and `Vec` / `std::vec::Vec`. Qualified paths may start with `::`, for example `::std::vec::Vec`. Type aliases are treated as ordinary required fields.
 
 ### bool fields
 

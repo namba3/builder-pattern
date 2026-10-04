@@ -125,6 +125,27 @@ fn aliases_of_special_types_use_regular_field_setters() {
 }
 
 #[test]
+fn absolute_paths_of_special_types_keep_special_behavior() {
+    #[derive(Builder)]
+    struct AbsolutePaths {
+        enabled: ::core::primitive::bool,
+        value: ::std::option::Option<u8>,
+        values: ::std::vec::Vec<u8>,
+    }
+
+    let value = AbsolutePaths::builder()
+        .enabled()
+        .value(7)
+        .values([1, 2])
+        .values([3])
+        .build();
+
+    assert!(value.enabled);
+    assert_eq!(value.value, Some(7));
+    assert_eq!(value.values, [1, 2, 3]);
+}
+
+#[test]
 fn derive_expansion_resolves_renamed_runtime_dependency() {
     #[derive(Builder)]
     struct S {
