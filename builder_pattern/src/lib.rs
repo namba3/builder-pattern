@@ -2,12 +2,21 @@ extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{Data, DataStruct, Error, Fields, FieldsNamed, Path};
+use syn::{Data, DataStruct, Error, Fields, FieldsNamed, Path, visit::Visit};
 
 mod builder_item;
 pub mod parts;
 
 use crate::builder_item::{BuilderItem, BuilderItemType, InitialExpr};
+
+#[derive(Default)]
+struct IdentCollector(std::collections::HashSet<String>);
+
+impl<'ast> Visit<'ast> for IdentCollector {
+    fn visit_ident(&mut self, ident: &'ast syn::Ident) {
+        self.0.insert(ident.to_string());
+    }
+}
 
 pub fn impl_builder(
     input: proc_macro::TokenStream,
@@ -24,19 +33,27 @@ pub fn impl_builder(
         .into());
     }
 
-    let repr = ast
-        .attrs
-        .iter()
-        .find(|a| path_to_string(a.path(), "::").as_str() == "repr");
-
     let builder_name = quote::format_ident!("{}Builder", original_name);
 
     let fields = fields(&ast.data).map_err(|message| to_compile_error(&ast, message))?;
-    let builder_items = fields
+    let mut builder_items = fields
         .named
         .iter()
         .map(|field| BuilderItem::try_from(field))
         .collect::<Result<Vec<_>, _>>()?;
+    let mut used_identifiers = IdentCollector::default();
+    used_identifiers.visit_derive_input(&ast);
+    let mut next_state_index = 0;
+    for item in &mut builder_items {
+        loop {
+            let name = format!("__BuilderState{next_state_index}");
+            next_state_index += 1;
+            if used_identifiers.0.insert(name.clone()) {
+                item.generics_ident = quote::format_ident!("{name}");
+                break;
+            }
+        }
+    }
 
     let builder_struct = {
         let generics = builder_items.iter().map(|item| &item.generics_ident);
@@ -52,7 +69,6 @@ pub fn impl_builder(
         );
 
         quote! {
-            #repr
             struct #builder_name < #(#generics),* > {
                 #(#fields,)*
             }
@@ -95,7 +111,7 @@ pub fn impl_builder(
                         quote! { #field_name: ::builder_pattern::parts::Default::< #ty >::new( { #expr } ) }
                     }
                     Some(InitialExpr::Fixed(expr)) => quote! { #field_name: ::builder_pattern::parts::Fixed::< #ty >::new( { #expr } )},
-                    None => quote! { #field_name: unsafe { ::builder_pattern::parts::Uninit::< #ty >::uninit() } }
+                    None => quote! { #field_name: ::builder_pattern::parts::Uninit::< #ty >::uninit() }
                 }
             }
         });
@@ -103,140 +119,171 @@ pub fn impl_builder(
         quote! { #(#initilizes),* }
     };
 
-    let impl_setters = builder_items.iter().filter(|BuilderItem{ty, initial_expr, ..}| {
-        match (ty, initial_expr) {
-            (BuilderItemType::AsIs(_), Some(InitialExpr::Fixed(_))) => false,
-            _ => true,
-        }
-    }).map(|target| {
-        let target_field_name = target.field_name;
-        let target_ty = &target.ty;
-        let target_method_name = &target.method_name;
+    let impl_setters = builder_items
+        .iter()
+        .filter(|BuilderItem {
+                    ty,
+                    initial_expr,
+                    ..
+                }| !matches!((ty, initial_expr), (BuilderItemType::AsIs(_), Some(InitialExpr::Fixed(_)))))
+        .map(|target| {
+            let target_field_name = target.field_name;
+            let target_ty = &target.ty;
+            let target_method_name = &target.method_name;
 
-        let impl_generics = builder_items.iter().filter_map(|BuilderItem{field_name, generics_ident, ..}| {
-            if *field_name == target_field_name {
-                None
-            } else {
-                quote! { #generics_ident }.into()
-            }
-        });
-        let current_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, initial_expr, ..}| {
-            if *field_name == target_field_name {
-                match ty {
-                    BuilderItemType::Flag => quote!{ ::builder_pattern::parts::False },
-                    BuilderItemType::Option { inner_type } => {
-                        quote! { ::builder_pattern::parts::None< #inner_type > }
+            let impl_generics = builder_items.iter().filter_map(
+                |BuilderItem {
+                     field_name,
+                     generics_ident,
+                     ..
+                 }| {
+                    if *field_name == target_field_name {
+                        None
+                    } else {
+                        quote! { #generics_ident }.into()
                     }
-                    BuilderItemType::Vec { inner_type, .. } => {
-                        quote! { ::builder_pattern::parts::Vec< #inner_type > }
+                },
+            );
+            let current_builder_generic_args = builder_items.iter().map(
+                |BuilderItem {
+                     field_name,
+                     ty,
+                     generics_ident,
+                     initial_expr,
+                     ..
+                 }| {
+                    if *field_name != target_field_name {
+                        return quote! { #generics_ident };
                     }
-                    BuilderItemType::AsIs(ty) => match initial_expr {
-                        Some(InitialExpr::Default(_)) => {
-                            quote! { ::builder_pattern::parts::Default< #ty > }
+                    match ty {
+                        BuilderItemType::Flag => quote! { ::builder_pattern::parts::False },
+                        BuilderItemType::Option { inner_type } => {
+                            quote! { ::builder_pattern::parts::None<#inner_type> }
                         }
-                        Some(InitialExpr::Fixed(_)) => unreachable!(),
-                        None => quote! { ::builder_pattern::parts::Uninit< #ty > },
-                    },
-                }
-            } else {
-                quote! { #generics_ident }
-            }
-        });
-        let next_builder_generic_args = builder_items.iter().map(|BuilderItem{field_name, ty, generics_ident, initial_expr, ..}| {
-            if *field_name == target_field_name {
-                match ty {
-                    BuilderItemType::Flag => quote!{ ::builder_pattern::parts::True },
-                    BuilderItemType::Option { inner_type } => {
-                        quote! { ::builder_pattern::parts::Some< #inner_type > }
-                    }
-                    BuilderItemType::Vec { inner_type, .. } => {
-                        quote! { ::builder_pattern::parts::Vec< #inner_type > }
-                    }
-                    BuilderItemType::AsIs(ty) => match initial_expr {
-                        Some(InitialExpr::Default(_)) => {
-                            quote! { ::builder_pattern::parts::Certain< #ty > }
+                        BuilderItemType::Vec { inner_type, .. } => {
+                            quote! { ::builder_pattern::parts::Vec<#inner_type> }
                         }
-                        Some(InitialExpr::Fixed(_)) => unreachable!(),
-                        None => quote! { ::builder_pattern::parts::Certain< #ty > },
+                        BuilderItemType::AsIs(ty) => match initial_expr {
+                            Some(InitialExpr::Default(_)) => {
+                                quote! { ::builder_pattern::parts::Default<#ty> }
+                            }
+                            Some(InitialExpr::Fixed(_)) => unreachable!(),
+                            None => quote! { ::builder_pattern::parts::Uninit<#ty> },
+                        },
+                    }
+                },
+            );
+            let next_builder_generic_args = builder_items
+                .iter()
+                .map(
+                    |BuilderItem {
+                         field_name,
+                         ty,
+                         generics_ident,
+                         initial_expr,
+                         ..
+                     }| {
+                        if *field_name != target_field_name {
+                            return quote! { #generics_ident };
+                        }
+                        match ty {
+                            BuilderItemType::Flag => quote! { ::builder_pattern::parts::True },
+                            BuilderItemType::Option { inner_type } => {
+                                quote! { ::builder_pattern::parts::Some<#inner_type> }
+                            }
+                            BuilderItemType::Vec { inner_type, .. } => {
+                                quote! { ::builder_pattern::parts::Vec<#inner_type> }
+                            }
+                            BuilderItemType::AsIs(ty) => match initial_expr {
+                                Some(InitialExpr::Default(_)) | None => {
+                                    quote! { ::builder_pattern::parts::Certain<#ty> }
+                                }
+                                Some(InitialExpr::Fixed(_)) => unreachable!(),
+                            },
+                        }
                     },
+                )
+                .collect::<Vec<_>>();
+            let value_ident = quote::format_ident!("__builder_value");
+            let moved_fields = builder_items.iter().enumerate().map(|(index, item)| {
+                let field_name = item.field_name;
+                let local_name = quote::format_ident!("__builder_field_{index}");
+                if field_name == target_field_name {
+                    quote! { #field_name: _, }
+                } else {
+                    quote! { #field_name: #local_name, }
                 }
-            } else {
-                quote! { #generics_ident }
-            }
-        }).collect::<Vec<_>>();
+            });
+            let replacement = match target_ty {
+                BuilderItemType::Flag => quote! { ::builder_pattern::parts::True::new() },
+                BuilderItemType::Option { .. } => {
+                    quote! { ::builder_pattern::parts::Some::new(#value_ident) }
+                }
+                BuilderItemType::AsIs(_) => {
+                    quote! { ::builder_pattern::parts::Certain::new(#value_ident) }
+                }
+                BuilderItemType::Vec { .. } => quote! {},
+            };
+            let output_fields = builder_items.iter().enumerate().map(|(index, item)| {
+                let field_name = item.field_name;
+                let local_name = quote::format_ident!("__builder_field_{index}");
+                if field_name == target_field_name {
+                    quote! { #field_name: #replacement, }
+                } else {
+                    quote! { #field_name: #local_name, }
+                }
+            });
 
-        match target_ty {
-            BuilderItemType::Flag => quote!{
-                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
-                    #[inline]
-                    pub fn #target_method_name(mut self) -> #builder_name < #(#next_builder_generic_args),* > {
-                        unsafe {
-                            let mut builder: #builder_name < #(#next_builder_generic_args),* > = core::mem::transmute_copy(&self);
-                            core::mem::forget(self);
-                            builder.#target_field_name = ::builder_pattern::parts::True::new();
-                            builder
-                        }
-                    }
-                }
-            },
-            BuilderItemType::Option { inner_type} => quote!{
-                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
-                    #[inline]
-                    pub fn #target_method_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
-                        unsafe {
-                            let mut builder: #builder_name < #(#next_builder_generic_args),* > = core::mem::transmute_copy(&self);
-                            core::mem::forget(self);
-                            builder.#target_field_name = ::builder_pattern::parts::Some::new(value);
-                            builder
-                        }
-                    }
-                }
-            },
-            BuilderItemType::Vec {inner_type,  ..} => {
-                let each = if let Some(target_each_method_name) = &target.each_method_name {
-                    quote!{
+            match target_ty {
+                BuilderItemType::Flag => quote! {
+                    impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
                         #[inline]
-                        pub fn #target_each_method_name(mut self, value: #inner_type) -> #builder_name < #(#next_builder_generic_args),* > {
-                            self.#target_field_name.push(value);
+                        pub fn #target_method_name(self) -> #builder_name<#(#next_builder_generic_args),*> {
+                            let #builder_name { #(#moved_fields)* } = self;
+                            #builder_name { #(#output_fields)* }
+                        }
+                    }
+                },
+                BuilderItemType::Option { inner_type } => quote! {
+                    impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                        #[inline]
+                        pub fn #target_method_name(self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
+                            let #builder_name { #(#moved_fields)* } = self;
+                            #builder_name { #(#output_fields)* }
+                        }
+                    }
+                },
+                BuilderItemType::Vec { inner_type, .. } => {
+                    let each = target.each_method_name.as_ref().map(|each_method_name| quote! {
+                        #[inline]
+                        pub fn #each_method_name(mut self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
+                            self.#target_field_name.push(#value_ident);
                             self
                         }
-                    }.into()
-                } else {
-                    None
-                };
-                quote!{
-                impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
-                    #each
+                    });
+                    quote! {
+                        impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                            #each
 
-                    #[inline]
-                    pub fn #target_method_name<Iter: core::iter::IntoIterator<Item=#inner_type>>(mut self, iter: Iter) -> #builder_name < #(#next_builder_generic_args),* > {
-                        self.#target_field_name.extend(iter);
-                        self
-                    }
-                }}
-            },
-            BuilderItemType::AsIs (ty) => {
-                let assignment = match target.initial_expr {
-                    Some(InitialExpr::Default(_)) => quote!{ self.#target_field_name = ::builder_pattern::parts::Default::new(value); },
-                    Some(InitialExpr::Fixed(_)) => unreachable!(),
-                    None => quote!{ self.#target_field_name = ::builder_pattern::parts::Uninit::new(value); },
-                };
-                quote!{
-                    impl< #(#impl_generics),* > #builder_name < #(#current_builder_generic_args),* > {
-                        #[inline]
-                        pub fn #target_method_name(mut self, value: #ty) -> #builder_name < #(#next_builder_generic_args),* > {
-                            unsafe {
-                                #assignment
-                                let builder = core::mem::transmute_copy(&self);
-                                core::mem::forget(self);
-                                builder
+                            #[inline]
+                            pub fn #target_method_name<Iter: core::iter::IntoIterator<Item = #inner_type>>(mut self, __builder_iter: Iter) -> #builder_name<#(#next_builder_generic_args),*> {
+                                self.#target_field_name.extend(__builder_iter);
+                                self
                             }
                         }
                     }
                 }
+                BuilderItemType::AsIs(ty) => quote! {
+                    impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                        #[inline]
+                        pub fn #target_method_name(self, #value_ident: #ty) -> #builder_name<#(#next_builder_generic_args),*> {
+                            let #builder_name { #(#moved_fields)* } = self;
+                            #builder_name { #(#output_fields)* }
+                        }
+                    }
+                },
             }
-        }
-    });
+        });
 
     let impl_final_build = {
         let impl_generics = builder_items
@@ -245,22 +292,42 @@ pub fn impl_builder(
                 quote! { #generics_ident }
             })
             .collect::<Vec<_>>();
-        let constraints = builder_items
-            .iter()
-            .map(|BuilderItem { generics_ident, .. }| {
-                quote! { #generics_ident: ::builder_pattern::parts::Ready }
-            });
+        let constraints = builder_items.iter().map(
+            |BuilderItem {
+                 generics_ident, ty, ..
+             }| {
+                quote! { #generics_ident: ::builder_pattern::parts::Ready<#ty> }
+            },
+        );
+        let builder_fields = builder_items.iter().enumerate().map(|(index, item)| {
+            let field_name = item.field_name;
+            let local_name = quote::format_ident!("__builder_field_{index}");
+            quote! { #field_name: #local_name, }
+        });
+        let built_fields = builder_items.iter().enumerate().map(
+            |(index,
+              BuilderItem {
+                 field_name,
+                 generics_ident,
+                 ty,
+                 ..
+             })| {
+                let local_name = quote::format_ident!("__builder_field_{index}");
+                quote! {
+                    #field_name: <#generics_ident as ::builder_pattern::parts::Ready<#ty>>::into_inner(#local_name),
+                }
+            },
+        );
 
         quote! {
-            impl < #(#impl_generics),* > #builder_name < #(#impl_generics),* >
+            impl<#(#impl_generics),*> #builder_name<#(#impl_generics),*>
                 where #(#constraints),*
             {
                 #[inline]
                 pub fn build(self) -> #original_name {
-                    unsafe {
-                        let builder = core::mem::transmute_copy(&self);
-                        core::mem::forget(self);
-                        builder
+                    let #builder_name { #(#builder_fields)* } = self;
+                    #original_name {
+                        #(#built_fields)*
                     }
                 }
             }

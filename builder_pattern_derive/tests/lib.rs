@@ -1,6 +1,22 @@
 #![allow(dead_code)]
 
 use builder_pattern_derive::Builder;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
+struct DropProbe(Arc<AtomicUsize>);
+
+impl Drop for DropProbe {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+fn drop_probe(counter: &Arc<AtomicUsize>) -> DropProbe {
+    DropProbe(Arc::clone(counter))
+}
 
 #[test]
 fn basic_usage() {
@@ -140,6 +156,56 @@ fn fixed_expression_initializes_a_non_settable_field() {
     let s = S::builder().build();
 
     assert_eq!(s.value, 4);
+}
+
+#[test]
+fn dropping_incomplete_builder_drops_initialized_values_once() {
+    #[derive(Builder)]
+    struct S {
+        value: DropProbe,
+        pending: String,
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    let builder = S::builder().value(drop_probe(&drops));
+
+    drop(builder);
+
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn built_struct_drops_each_required_value_once() {
+    #[derive(Builder)]
+    struct S {
+        first: DropProbe,
+        second: DropProbe,
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    let value = S::builder()
+        .first(drop_probe(&drops))
+        .second(drop_probe(&drops))
+        .build();
+
+    drop(value);
+
+    assert_eq!(drops.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn generated_state_names_do_not_shadow_user_types() {
+    #[allow(non_camel_case_types)]
+    struct __BuilderState0(u8);
+
+    #[derive(Builder)]
+    struct S {
+        value: __BuilderState0,
+    }
+
+    let s = S::builder().value(__BuilderState0(7)).build();
+
+    assert_eq!(s.value.0, 7);
 }
 
 /// ```compile_fail

@@ -34,7 +34,7 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
             .transpose()?;
 
         let field_name = field.ident.as_ref().unwrap();
-        let generics_ident = format_ident!("{}", to_camel_case(&field_name.to_string()));
+        let generics_ident = format_ident!("__BuilderState");
 
         let ty = if let Some(BuilderAttribute {
             as_is_denoted: true,
@@ -387,18 +387,6 @@ fn is_bool(path: &Path) -> bool {
         .is_some()
 }
 
-fn to_camel_case(str: &str) -> String {
-    str.split('_')
-        .map(|s| {
-            let mut s = s.to_ascii_lowercase();
-            let (head, _) = s.split_at_mut(1);
-            head.make_ascii_uppercase();
-            s
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -582,12 +570,5 @@ mod tests {
             error_message(error(&allocator))
                 .contains("Vec with custom allocator is not supported.")
         );
-    }
-
-    #[test]
-    fn generated_builder_generic_identifiers_are_camel_cased() {
-        let field = parse_field(quote!(some_value_name: u8));
-
-        assert_eq!(item(&field).unwrap().generics_ident, "SomeValueName");
     }
 }

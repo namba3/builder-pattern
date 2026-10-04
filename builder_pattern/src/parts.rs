@@ -1,5 +1,7 @@
-/// marker trait
-pub trait Ready {}
+/// Marker types that can safely yield their initialized field value.
+pub trait Ready<T> {
+    fn into_inner(self) -> T;
+}
 
 #[repr(transparent)]
 pub struct Certain<T>(T);
@@ -9,36 +11,53 @@ impl<T> Certain<T> {
         Self(t)
     }
 }
-impl<T> Ready for Certain<T> {}
+impl<T> Ready<T> for Certain<T> {
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
 
-/// behaves like core::mem::MaybeUninit.
-/// The inner data will be ignored with code::mem::forget when drops,
-/// so you MUST use core::mem::transmute or something to safely drop the inner data.
+/// Type-state wrapper for possibly uninitialized T storage.
+///
+/// Dropping this wrapper never drops a stored T. Builder transitions must
+/// move initialized storage into its initialized state so the value is dropped
+/// exactly once.
 ///
 /// # Exmple
 /// ```
 /// use builder_pattern::parts::Uninit;
 ///
 /// fn main() {
-///     let data = unsafe { Uninit::<String>::uninit() };
+///     let data = Uninit::<String>::uninit();
 ///     drop(data); // ok
 ///
-///     let data = unsafe { Uninit::new(String::from("test")) };
-///     // drop(data); // leaks inner string!!!
-///     let data: String = unsafe{ core::mem::transmute(data) }; // transmute
+///     let data = Uninit::new(String::from("test"));
+///     // Transfer the initialized value before dropping the wrapper.
+///     let data: String = unsafe { data.assume_init() };
 ///     drop(data); // ok, not leaks the string
 /// }
 /// ```
 #[repr(transparent)]
-pub struct Uninit<T>(core::mem::ManuallyDrop<T>);
+pub struct Uninit<T>(core::mem::MaybeUninit<T>);
 impl<T> Uninit<T> {
     #[inline]
-    pub unsafe fn uninit() -> Self {
-        unsafe { core::mem::MaybeUninit::uninit().assume_init() }
+    pub const fn uninit() -> Self {
+        Self(core::mem::MaybeUninit::uninit())
     }
     #[inline]
-    pub const unsafe fn new(t: T) -> Self {
-        Self(core::mem::ManuallyDrop::new(t))
+    pub const fn new(t: T) -> Self {
+        Self(core::mem::MaybeUninit::new(t))
+    }
+
+    /// Extracts the initialized value from this wrapper.
+    ///
+    /// # Safety
+    ///
+    /// The storage must have been initialized with a valid value of T.
+    #[inline]
+    pub unsafe fn assume_init(self) -> T {
+        // SAFETY: upheld by the caller.
+        unsafe { self.0.assume_init() }
     }
 }
 #[repr(transparent)]
@@ -49,7 +68,11 @@ impl False {
         Self(false)
     }
 }
-impl Ready for False {}
+impl Ready<bool> for False {
+    fn into_inner(self) -> bool {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 pub struct True(bool);
@@ -59,7 +82,11 @@ impl True {
         Self(true)
     }
 }
-impl Ready for True {}
+impl Ready<bool> for True {
+    fn into_inner(self) -> bool {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 pub struct None<T>(Option<T>);
@@ -69,7 +96,11 @@ impl<T> None<T> {
         Self(Option::None)
     }
 }
-impl<T> Ready for None<T> {}
+impl<T> Ready<Option<T>> for None<T> {
+    fn into_inner(self) -> Option<T> {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 pub struct Some<T>(Option<T>);
@@ -79,7 +110,11 @@ impl<T> Some<T> {
         Self(Option::Some(t))
     }
 }
-impl<T> Ready for Some<T> {}
+impl<T> Ready<Option<T>> for Some<T> {
+    fn into_inner(self) -> Option<T> {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 pub struct Vec<T>(std::vec::Vec<T>);
@@ -97,7 +132,11 @@ impl<T> Vec<T> {
         self.0.extend(iter)
     }
 }
-impl<T> Ready for Vec<T> {}
+impl<T> Ready<std::vec::Vec<T>> for Vec<T> {
+    fn into_inner(self) -> std::vec::Vec<T> {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 pub struct Default<T>(T);
@@ -107,7 +146,11 @@ impl<T> Default<T> {
         Self(t)
     }
 }
-impl<T> Ready for Default<T> {}
+impl<T> Ready<T> for Default<T> {
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 pub struct Fixed<T>(T);
@@ -117,31 +160,46 @@ impl<T> Fixed<T> {
         Self(t)
     }
 }
-impl<T> Ready for Fixed<T> {}
+impl<T> Ready<T> for Fixed<T> {
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn assert_ready<T: Ready>() {}
+    fn assert_ready<T, Value>()
+    where
+        T: Ready<Value>,
+    {
+    }
 
     #[test]
     fn value_markers_preserve_their_values() {
         assert_eq!(Certain::new(1).0, 1);
         assert_eq!(Default::new(2).0, 2);
         assert_eq!(Fixed::new(3).0, 3);
+        assert_eq!(Certain::new(4).into_inner(), 4);
+        assert_eq!(Default::new(5).into_inner(), 5);
+        assert_eq!(Fixed::new(6).into_inner(), 6);
     }
 
     #[test]
     fn boolean_markers_represent_false_and_true() {
         assert!(!False::new().0);
         assert!(True::new().0);
+        assert!(!False::new().into_inner());
+        assert!(True::new().into_inner());
     }
 
     #[test]
     fn option_markers_represent_none_and_some() {
         assert_eq!(None::<u8>::new().0, Option::None);
         assert_eq!(Some::new(7).0, Option::Some(7));
+        assert_eq!(None::<u8>::new().into_inner(), Option::None);
+        assert_eq!(Some::new(8).into_inner(), Option::Some(8));
     }
 
     #[test]
@@ -151,17 +209,33 @@ mod tests {
         values.extend([2, 3]);
 
         assert_eq!(values.0, std::vec![1, 2, 3]);
+        assert_eq!(values.into_inner(), std::vec![1, 2, 3]);
     }
 
     #[test]
     fn all_fully_initialized_markers_implement_ready() {
-        assert_ready::<Certain<u8>>();
-        assert_ready::<Default<u8>>();
-        assert_ready::<Fixed<u8>>();
-        assert_ready::<False>();
-        assert_ready::<True>();
-        assert_ready::<None<u8>>();
-        assert_ready::<Some<u8>>();
-        assert_ready::<Vec<u8>>();
+        assert_ready::<Certain<u8>, u8>();
+        assert_ready::<Default<u8>, u8>();
+        assert_ready::<Fixed<u8>, u8>();
+        assert_ready::<False, bool>();
+        assert_ready::<True, bool>();
+        assert_ready::<None<u8>, Option<u8>>();
+        assert_ready::<Some<u8>, Option<u8>>();
+        assert_ready::<Vec<u8>, std::vec::Vec<u8>>();
+    }
+
+    #[test]
+    fn uninitialized_string_storage_can_be_dropped() {
+        let storage = Uninit::<String>::uninit();
+
+        drop(storage);
+    }
+
+    #[test]
+    fn initialized_storage_yields_its_value() {
+        let storage = Uninit::new(String::from("ready"));
+        let value = unsafe { storage.assume_init() };
+
+        assert_eq!(value, "ready");
     }
 }

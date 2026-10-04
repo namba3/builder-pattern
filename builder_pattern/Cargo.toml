@@ -5,6 +5,6 @@ edition = "2024"
 rust-version = "1.85"
 
 [dependencies]
-syn = { version = "3", features = ["full"] }
+syn = { version = "3", features = ["full", "visit"] }
 quote = "1"
 proc-macro2 = "1"
