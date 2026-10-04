@@ -491,6 +491,23 @@ fn built_struct_drops_each_required_value_once() {
 }
 
 #[test]
+fn vec_setter_accepts_non_clone_values_and_drops_them_once() {
+    #[derive(Builder)]
+    struct S {
+        values: Vec<DropProbe>,
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    let value = S::builder()
+        .values([drop_probe(&drops), drop_probe(&drops)])
+        .build();
+
+    assert_eq!(drops.load(Ordering::SeqCst), 0);
+    drop(value);
+    assert_eq!(drops.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn defaulted_and_fixed_values_drop_once() {
     #[derive(Builder)]
     struct S {
