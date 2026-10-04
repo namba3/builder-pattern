@@ -160,10 +160,12 @@ fn generic_struct_supports_default_type_parameters() {
         value: T,
     }
 
+    let defaulted: GenericValue = GenericValue::builder().value(42).build();
     let value = GenericValue::builder()
         .value(String::from("generic"))
         .build();
 
+    assert_eq!(defaulted.value, 42);
     assert_eq!(value.value, "generic");
 }
 
