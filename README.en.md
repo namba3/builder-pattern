@@ -174,7 +174,7 @@ assert_eq!(s.a, 1);
 
 ### as_is
 
-`as_is` attribute treats the special fields as normal.
+`as_is` attribute treats the special fields as normal. Since `each` relies on special `Vec` handling, the two attributes cannot be used on the same field.
 
 ```rust
 #[derive(Builder)]

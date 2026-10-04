@@ -1,0 +1,6 @@
+error: 'each' cannot be used with 'as_is'; 'as_is' disables the Vec behavior required by 'each'.
+ --> tests/ui/as_is_with_each.rs:5:5
+  |
+5 | /     #[builder(as_is, each = "item")]
+6 | |     values: Vec<u8>,
+  | |___________________^

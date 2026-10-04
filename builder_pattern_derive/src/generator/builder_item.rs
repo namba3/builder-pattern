@@ -62,6 +62,19 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                 "'each' cannot be used with 'fixed' because fixed fields do not have setters.",
             ));
         }
+        if matches!(
+            builder_attr.as_ref(),
+            Some(BuilderAttribute {
+                as_is_denoted: true,
+                each: Some(_),
+                ..
+            })
+        ) {
+            return Err(to_compile_error(
+                field,
+                "'each' cannot be used with 'as_is'; 'as_is' disables the Vec behavior required by 'each'.",
+            ));
+        }
 
         let field_name = field
             .ident
