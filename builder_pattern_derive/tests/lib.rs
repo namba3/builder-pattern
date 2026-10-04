@@ -239,6 +239,23 @@ fn absolute_paths_of_special_types_keep_special_behavior() {
 }
 
 #[test]
+fn special_field_types_can_be_nested() {
+    #[derive(Builder)]
+    struct Nested {
+        optional_values: Option<Vec<u8>>,
+        optional_items: Vec<Option<u8>>,
+    }
+
+    let value = Nested::builder()
+        .optional_values(vec![1, 2])
+        .optional_items([Some(3), None])
+        .build();
+
+    assert_eq!(value.optional_values, Some(vec![1, 2]));
+    assert_eq!(value.optional_items, [Some(3), None]);
+}
+
+#[test]
 fn derive_expansion_resolves_hyphenated_runtime_dependency_alias() {
     #[derive(Builder)]
     struct S {
