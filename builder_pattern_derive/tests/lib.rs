@@ -6,6 +6,43 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+mod standard_library_names_can_be_shadowed {
+    #[allow(dead_code)]
+    mod core {}
+    #[allow(dead_code)]
+    mod std {}
+
+    use builder_pattern_derive::Builder;
+
+    #[derive(Builder)]
+    struct Fields {
+        enabled: bool,
+        optional: Option<u8>,
+        values: Vec<u8>,
+    }
+
+    #[derive(Builder)]
+    struct Items {
+        #[builder(each = "item")]
+        items: Vec<u8>,
+    }
+
+    #[test]
+    fn generated_standard_library_paths_are_absolute() {
+        let fields = Fields::builder()
+            .enabled()
+            .optional(7)
+            .values([1, 2])
+            .build();
+        let items = Items::builder().item(3).items([4, 5]).build();
+
+        assert!(fields.enabled);
+        assert_eq!(fields.optional, Some(7));
+        assert_eq!(fields.values, [1, 2]);
+        assert_eq!(items.items, [3, 4, 5]);
+    }
+}
+
 struct DropProbe(Arc<AtomicUsize>);
 
 impl Drop for DropProbe {

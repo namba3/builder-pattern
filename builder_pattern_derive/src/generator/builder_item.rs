@@ -214,20 +214,20 @@ fn single_type_argument<'a>(
 impl<'a> ToTokens for BuilderItemType<'a> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ts = match self {
-            BuilderItemType::Flag => quote! { core::primitive::bool },
+            BuilderItemType::Flag => quote! { ::core::primitive::bool },
             BuilderItemType::Option { inner_type } => {
-                quote! { core::option::Option< #inner_type >}
+                quote! { ::core::option::Option< #inner_type >}
             }
             BuilderItemType::Vec {
                 inner_type,
                 allocator: None,
                 ..
-            } => quote! { std::vec::Vec< #inner_type >},
+            } => quote! { ::std::vec::Vec< #inner_type >},
             BuilderItemType::Vec {
                 inner_type,
                 allocator: Some(allocator),
                 ..
-            } => quote! { std::vec::Vec< #inner_type, #allocator >},
+            } => quote! { ::std::vec::Vec< #inner_type, #allocator >},
             BuilderItemType::AsIs(ty) => quote! { #ty },
         };
         tokens.extend(ts);

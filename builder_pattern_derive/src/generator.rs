@@ -313,7 +313,7 @@ pub(crate) fn impl_builder_with_support_path(
                             #each
 
                             #[inline]
-                            pub fn #target_method_name(mut self, __builder_iter: impl core::iter::IntoIterator<Item = #inner_type>) -> #builder_name<#(#next_builder_generic_args),*> {
+                            pub fn #target_method_name(mut self, __builder_iter: impl ::core::iter::IntoIterator<Item = #inner_type>) -> #builder_name<#(#next_builder_generic_args),*> {
                                 self.#target_field_name.extend(__builder_iter);
                                 self
                             }
