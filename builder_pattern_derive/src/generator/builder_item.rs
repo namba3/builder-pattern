@@ -36,6 +36,19 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
 
         let builder_attr: Option<BuilderAttribute> =
             meta.map(BuilderAttribute::try_from).transpose()?;
+        if matches!(
+            builder_attr.as_ref(),
+            Some(BuilderAttribute {
+                name: Some(_),
+                initial_expr: Some((InitialExpr::Fixed(_), _)),
+                ..
+            })
+        ) {
+            return Err(to_compile_error(
+                field,
+                "'name' cannot be used with 'fixed' because fixed fields do not have setters.",
+            ));
+        }
 
         let field_name = field
             .ident
