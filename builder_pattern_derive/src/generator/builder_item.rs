@@ -563,7 +563,9 @@ mod tests {
     #[test]
     fn recognizes_qualified_special_field_types() {
         let bool_field = parse_field(quote!(enabled: core::primitive::bool));
+        let std_bool_field = parse_field(quote!(enabled: std::primitive::bool));
         let option_field = parse_field(quote!(value: std::option::Option<u32>));
+        let core_option_field = parse_field(quote!(value: core::option::Option<u32>));
         let vec_field = parse_field(quote!(values: std::vec::Vec<String>));
 
         assert!(matches!(
@@ -571,7 +573,15 @@ mod tests {
             BuilderItemType::Flag
         ));
         assert!(matches!(
+            item(&std_bool_field).unwrap().ty,
+            BuilderItemType::Flag
+        ));
+        assert!(matches!(
             item(&option_field).unwrap().ty,
+            BuilderItemType::Option { .. }
+        ));
+        assert!(matches!(
+            item(&core_option_field).unwrap().ty,
             BuilderItemType::Option { .. }
         ));
         assert!(matches!(
