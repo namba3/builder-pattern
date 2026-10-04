@@ -46,6 +46,18 @@ fn basic_usage() {
 }
 
 #[test]
+fn derive_expansion_resolves_renamed_runtime_dependency() {
+    #[derive(Builder)]
+    struct S {
+        value: u8,
+    }
+
+    let value = S::builder().value(42).build();
+
+    assert_eq!(value.value, 42);
+}
+
+#[test]
 fn bool_field_value_is_false_by_default() {
     #[derive(Builder)]
     struct S {

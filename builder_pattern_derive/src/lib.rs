@@ -1,5 +1,6 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
 
 /// # Builder
 ///
@@ -233,7 +234,17 @@ use proc_macro::TokenStream;
 /// ```
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn builder_derive(input: TokenStream) -> TokenStream {
-    match builder_pattern::impl_builder(input) {
+    let support_crate = match crate_name("builder_pattern") {
+        Ok(FoundCrate::Itself) => "crate".to_owned(),
+        Ok(FoundCrate::Name(name)) => format!("::{}", name.replace('-', "_")),
+        Err(_) => {
+            return "compile_error!(\"Builder derive requires the `builder_pattern` crate as a direct dependency.\");"
+                .parse()
+                .expect("static compile_error invocation parses");
+        }
+    };
+
+    match builder_support::impl_builder_with_support_path(input, &support_crate) {
         Ok(code) => code,
         Err(why) => why,
     }

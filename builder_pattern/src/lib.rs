@@ -21,7 +21,17 @@ impl<'ast> Visit<'ast> for IdentCollector {
 pub fn impl_builder(
     input: proc_macro::TokenStream,
 ) -> Result<proc_macro::TokenStream, proc_macro::TokenStream> {
+    impl_builder_with_support_path(input, "::builder_pattern")
+}
+
+pub fn impl_builder_with_support_path(
+    input: proc_macro::TokenStream,
+    support_crate_path: &str,
+) -> Result<proc_macro::TokenStream, proc_macro::TokenStream> {
     let ast: syn::DeriveInput = syn::parse(input).map_err(|err| err.to_compile_error())?;
+    let support_crate_path = syn::parse_str::<Path>(support_crate_path)
+        .map_err(|err| proc_macro::TokenStream::from(err.to_compile_error()))?;
+    let parts_path = quote!(#support_crate_path::parts);
 
     let original_name = &ast.ident;
     let original_visibility = &ast.vis;
@@ -80,42 +90,51 @@ pub fn impl_builder(
         |BuilderItem {
              ty, initial_expr, ..
          }| match ty {
-            BuilderItemType::Flag => quote! { ::builder_pattern::parts::False },
+            BuilderItemType::Flag => quote! { #parts_path::False },
             BuilderItemType::Option { inner_type } => {
-                quote! { ::builder_pattern::parts::None< #inner_type > }
+                quote! { #parts_path::None< #inner_type > }
             }
 
             BuilderItemType::Vec { inner_type, .. } => {
-                quote! { ::builder_pattern::parts::Vec< #inner_type > }
+                quote! { #parts_path::Vec< #inner_type > }
             }
             BuilderItemType::AsIs(ty) => match initial_expr {
                 Some(InitialExpr::Default(_)) => {
-                    quote! { ::builder_pattern::parts::Default< #ty > }
+                    quote! { #parts_path::Default< #ty > }
                 }
-                Some(InitialExpr::Fixed(_)) => quote! { ::builder_pattern::parts::Fixed< #ty > },
-                None => quote! { ::builder_pattern::parts::Uninit< #ty > },
+                Some(InitialExpr::Fixed(_)) => quote! { #parts_path::Fixed< #ty > },
+                None => quote! { #parts_path::Uninit< #ty > },
             },
         },
     );
     let initialize_builder_fields = {
-        let initilizes = builder_items.iter().map(|BuilderItem {field_name, ty, initial_expr, ..}| {
-            match ty {
-                BuilderItemType::Flag => quote!{ #field_name: ::builder_pattern::parts::False::new() },
-                BuilderItemType::Option { inner_type } => {
-                    quote! { #field_name: ::builder_pattern::parts::None::< #inner_type > ::new() }
-                }
-                BuilderItemType::Vec { inner_type, .. } => {
-                    quote! { #field_name: ::builder_pattern::parts::Vec::< #inner_type > ::new() }
-                }
-                BuilderItemType::AsIs(ty) => match initial_expr {
-                    Some(InitialExpr::Default(expr)) => {
-                        quote! { #field_name: ::builder_pattern::parts::Default::< #ty >::new( { #expr } ) }
+        let initilizes = builder_items.iter().map(
+            |BuilderItem {
+                 field_name,
+                 ty,
+                 initial_expr,
+                 ..
+             }| {
+                match ty {
+                    BuilderItemType::Flag => quote! { #field_name: #parts_path::False::new() },
+                    BuilderItemType::Option { inner_type } => {
+                        quote! { #field_name: #parts_path::None::< #inner_type > ::new() }
                     }
-                    Some(InitialExpr::Fixed(expr)) => quote! { #field_name: ::builder_pattern::parts::Fixed::< #ty >::new( { #expr } )},
-                    None => quote! { #field_name: ::builder_pattern::parts::Uninit::< #ty >::uninit() }
+                    BuilderItemType::Vec { inner_type, .. } => {
+                        quote! { #field_name: #parts_path::Vec::< #inner_type > ::new() }
+                    }
+                    BuilderItemType::AsIs(ty) => match initial_expr {
+                        Some(InitialExpr::Default(expr)) => {
+                            quote! { #field_name: #parts_path::Default::< #ty >::new( { #expr } ) }
+                        }
+                        Some(InitialExpr::Fixed(expr)) => {
+                            quote! { #field_name: #parts_path::Fixed::< #ty >::new( { #expr } )}
+                        }
+                        None => quote! { #field_name: #parts_path::Uninit::< #ty >::uninit() },
+                    },
                 }
-            }
-        });
+            },
+        );
 
         quote! { #(#initilizes),* }
     };
@@ -157,19 +176,19 @@ pub fn impl_builder(
                         return quote! { #generics_ident };
                     }
                     match ty {
-                        BuilderItemType::Flag => quote! { ::builder_pattern::parts::False },
+                        BuilderItemType::Flag => quote! { #parts_path::False },
                         BuilderItemType::Option { inner_type } => {
-                            quote! { ::builder_pattern::parts::None<#inner_type> }
+                            quote! { #parts_path::None<#inner_type> }
                         }
                         BuilderItemType::Vec { inner_type, .. } => {
-                            quote! { ::builder_pattern::parts::Vec<#inner_type> }
+                            quote! { #parts_path::Vec<#inner_type> }
                         }
                         BuilderItemType::AsIs(ty) => match initial_expr {
                             Some(InitialExpr::Default(_)) => {
-                                quote! { ::builder_pattern::parts::Default<#ty> }
+                                quote! { #parts_path::Default<#ty> }
                             }
                             Some(InitialExpr::Fixed(_)) => unreachable!(),
-                            None => quote! { ::builder_pattern::parts::Uninit<#ty> },
+                            None => quote! { #parts_path::Uninit<#ty> },
                         },
                     }
                 },
@@ -188,16 +207,16 @@ pub fn impl_builder(
                             return quote! { #generics_ident };
                         }
                         match ty {
-                            BuilderItemType::Flag => quote! { ::builder_pattern::parts::True },
+                            BuilderItemType::Flag => quote! { #parts_path::True },
                             BuilderItemType::Option { inner_type } => {
-                                quote! { ::builder_pattern::parts::Some<#inner_type> }
+                                quote! { #parts_path::Some<#inner_type> }
                             }
                             BuilderItemType::Vec { inner_type, .. } => {
-                                quote! { ::builder_pattern::parts::Vec<#inner_type> }
+                                quote! { #parts_path::Vec<#inner_type> }
                             }
                             BuilderItemType::AsIs(ty) => match initial_expr {
                                 Some(InitialExpr::Default(_)) | None => {
-                                    quote! { ::builder_pattern::parts::Certain<#ty> }
+                                    quote! { #parts_path::Certain<#ty> }
                                 }
                                 Some(InitialExpr::Fixed(_)) => unreachable!(),
                             },
@@ -216,12 +235,12 @@ pub fn impl_builder(
                 }
             });
             let replacement = match target_ty {
-                BuilderItemType::Flag => quote! { ::builder_pattern::parts::True::new() },
+                BuilderItemType::Flag => quote! { #parts_path::True::new() },
                 BuilderItemType::Option { .. } => {
-                    quote! { ::builder_pattern::parts::Some::new(#value_ident) }
+                    quote! { #parts_path::Some::new(#value_ident) }
                 }
                 BuilderItemType::AsIs(_) => {
-                    quote! { ::builder_pattern::parts::Certain::new(#value_ident) }
+                    quote! { #parts_path::Certain::new(#value_ident) }
                 }
                 BuilderItemType::Vec { .. } => quote! {},
             };
@@ -297,7 +316,7 @@ pub fn impl_builder(
             |BuilderItem {
                  generics_ident, ty, ..
              }| {
-                quote! { #generics_ident: ::builder_pattern::parts::Ready<#ty> }
+                quote! { #generics_ident: #parts_path::Ready<#ty> }
             },
         );
         let builder_fields = builder_items.iter().enumerate().map(|(index, item)| {
@@ -315,7 +334,7 @@ pub fn impl_builder(
              })| {
                 let local_name = quote::format_ident!("__builder_field_{index}");
                 quote! {
-                    #field_name: <#generics_ident as ::builder_pattern::parts::Ready<#ty>>::into_inner(#local_name),
+                    #field_name: <#generics_ident as #parts_path::Ready<#ty>>::into_inner(#local_name),
                 }
             },
         );

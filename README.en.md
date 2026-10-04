@@ -37,6 +37,7 @@ assert_eq!(p.nums, [3, 4, 5, 6, 7, 8]);
 ```
 
 The generated `<StructName>Builder` type and `builder()` method have the same visibility as the original struct.
+Generated code resolves the Cargo dependency name for `builder_pattern`, so the dependency can be renamed.
 
 ## Compile Guarantee
 
