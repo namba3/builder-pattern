@@ -38,7 +38,7 @@ assert_eq!(p.nums, [3, 4, 5, 6, 7, 8]);
 
 The generated `<StructName>Builder` type and `builder()` method have the same visibility as the original struct.
 Generated code uses the `builder_pattern` runtime support crate, so add it as a direct dependency alongside the derive crate. The Cargo dependency may be renamed.
-Named-field structs, including empty structs, are supported. Generic structs retain their type, lifetime, and const parameters and `where` clauses. Unit and tuple structs are not supported.
+Named-field structs, including empty structs, are supported. Generic structs retain their type, lifetime, and const parameters, parameter defaults, and `where` clauses. Unit and tuple structs are not supported.
 
 ## Compile Guarantee
 
