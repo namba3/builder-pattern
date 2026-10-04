@@ -1,0 +1,5 @@
+error: expected at least one builder attribute inside #[builder(...)].
+ --> tests/ui/empty_builder_attribute.rs:5:7
+  |
+5 |     #[builder()]
+  |       ^^^^^^^^^

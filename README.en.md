@@ -151,6 +151,7 @@ assert_eq!(s.nums, vec![1, 2, 3, 4, 5, 6]);
 Apply `#[builder(...)]` to fields. Struct-level builder attributes are not supported.
 
 Use one `#[builder(...)]` attribute per field and combine multiple settings inside it.
+The attribute must contain at least one setting; empty `#[builder()]` is rejected.
 
 ### name
 

@@ -262,6 +262,12 @@ impl TryFrom<&Meta> for BuilderAttribute {
         let nested = list
             .parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
             .map_err(|err| to_compile_error(list, err))?;
+        if nested.is_empty() {
+            return Err(to_compile_error(
+                list,
+                "expected at least one builder attribute inside #[builder(...)].",
+            ));
+        }
         let items = nested
             .iter()
             .map(|meta| match meta {
