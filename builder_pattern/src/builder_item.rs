@@ -206,7 +206,7 @@ impl TryFrom<&Meta> for BuilderAttribute {
                 {
                     Ok(BuilderAttribute {
                         as_is_denoted: false,
-                        name: format_ident!("{}", str.value()).into(),
+                        name: Some(parse_method_name(&str.value(), value, "name")?),
                         each: None,
                         initial_expr: None,
                     })
@@ -273,15 +273,19 @@ impl TryFrom<&Meta> for BuilderAttribute {
 
         let name = items
             .get("name")
-            .map(|x| expect_string_literal(x, "name", "setter_name"))
-            .transpose()?
-            .map(|(name, ..)| format_ident!("{name}"));
+            .map(|x| {
+                let (name, _, value, _) = expect_string_literal(x, "name", "setter_name")?;
+                parse_method_name(&name, value, "name")
+            })
+            .transpose()?;
 
         let each = items
             .get("each")
-            .map(|x| expect_string_literal(x, "each", "setter_name"))
-            .transpose()?
-            .map(|(each, ..)| format_ident!("{each}"));
+            .map(|x| {
+                let (name, _, value, _) = expect_string_literal(x, "each", "setter_name")?;
+                parse_method_name(&name, value, "each")
+            })
+            .transpose()?;
 
         let default = items
             .get("default")
@@ -317,6 +321,17 @@ impl TryFrom<&Meta> for BuilderAttribute {
 
 fn parse_expr<'a>(expr: &str, value: &'a Expr) -> Result<Expr, TokenStream> {
     syn::parse_str(expr).map_err(|err| to_compile_error(value, err))
+}
+
+fn parse_method_name(name: &str, value: &Expr, attribute: &str) -> Result<Ident, TokenStream> {
+    syn::parse_str::<syn::ItemFn>(&format!("fn {name}() {{}}"))
+        .map(|function| function.sig.ident)
+        .map_err(|_| {
+            to_compile_error(
+                value,
+                format!("expected a valid Rust method name for '{attribute}', found '{name}'."),
+            )
+        })
 }
 
 fn expect_flag<'a>(
@@ -552,6 +567,43 @@ mod tests {
         assert!(error_message(error(&conflicting)).contains(
             "specifying both 'default' and 'fixed' attributes at the same time is not allowed"
         ));
+    }
+
+    #[test]
+    fn invalid_method_names_are_reported_as_attribute_errors() {
+        let invalid_name = parse_field(quote! {
+            #[builder(name = "not a method")]
+            value: u8
+        });
+        let invalid_each = parse_field(quote! {
+            #[builder(each = "not-a-method")]
+            values: Vec<u8>
+        });
+        let invalid_legacy_name = parse_field(quote! {
+            #[builder = "not a method"]
+            value: u8
+        });
+        let keyword_name = parse_field(quote! {
+            #[builder(name = "type")]
+            value: u8
+        });
+
+        assert!(
+            error_message(error(&invalid_name))
+                .contains("expected a valid Rust method name for 'name'")
+        );
+        assert!(
+            error_message(error(&invalid_each))
+                .contains("expected a valid Rust method name for 'each'")
+        );
+        assert!(
+            error_message(error(&invalid_legacy_name))
+                .contains("expected a valid Rust method name for 'name'")
+        );
+        assert!(
+            error_message(error(&keyword_name))
+                .contains("expected a valid Rust method name for 'name'")
+        );
     }
 
     #[test]

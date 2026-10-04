@@ -107,6 +107,19 @@ fn custom_name_attribute_renames_the_setter() {
 }
 
 #[test]
+fn custom_setter_name_can_use_a_raw_keyword_identifier() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(name = "r#type")]
+        value: u8,
+    }
+
+    let s = S::builder().r#type(7).build();
+
+    assert_eq!(s.value, 7);
+}
+
+#[test]
 fn as_is_uses_normal_setters_for_special_types() {
     #[derive(Builder)]
     struct S {

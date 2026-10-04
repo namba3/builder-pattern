@@ -136,6 +136,7 @@ assert_eq!(s.nums, vec![1, 2, 3, 4, 5, 6]);
 ### name
 
 `name` attribute changes the setter name.
+The value must be a valid Rust method name. Use a raw identifier such as `r#type` for a keyword.
 
 ```rust
 #[derive(Builder)]
@@ -176,6 +177,7 @@ assert_eq!(s.vec, vec![1, 2, 3]);
 ### each
 
 `each` attribute generates a setter that adds each value to the Vec field one by one.
+The value must be a valid Rust method name.
 
 ```rust
 #[derive(Builder)]
