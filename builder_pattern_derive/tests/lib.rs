@@ -552,9 +552,27 @@ mod public_api {
     }
 }
 
+mod crate_visible_api {
+    use super::Builder;
+
+    #[derive(Builder)]
+    pub(crate) struct CrateVisibleThing {
+        pub(crate) value: u32,
+    }
+}
+
 #[test]
 fn public_struct_exposes_its_generated_builder_type() {
     let builder: public_api::PublicThingBuilder<_> = public_api::PublicThing::builder();
+    let value = builder.value(42).build();
+
+    assert_eq!(value.value, 42);
+}
+
+#[test]
+fn crate_visible_struct_exposes_a_crate_visible_builder_type() {
+    let builder: crate_visible_api::CrateVisibleThingBuilder<_> =
+        crate_visible_api::CrateVisibleThing::builder();
     let value = builder.value(42).build();
 
     assert_eq!(value.value, 42);
