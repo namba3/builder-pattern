@@ -170,6 +170,7 @@ pub(crate) fn impl_builder_with_support_path(
 
         quote! {
             #[doc = #builder_doc]
+            #[allow(non_camel_case_types)]
             #[must_use = "call `build()` to construct the value"]
             #original_visibility struct #builder_name #builder_generics #builder_where_clause {
                 #(#fields,)*

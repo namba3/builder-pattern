@@ -560,6 +560,19 @@ fn generated_state_names_do_not_shadow_raw_user_identifiers() {
     assert_eq!(value.value, 7);
 }
 
+#[test]
+fn builder_supports_raw_identifiers_for_struct_and_field_names() {
+    #[allow(non_camel_case_types)]
+    #[derive(Builder)]
+    struct r#type {
+        r#match: u8,
+    }
+
+    let value = r#type::builder().r#match(7).build();
+
+    assert_eq!(value.r#match, 7);
+}
+
 mod public_api {
     use super::Builder;
 
