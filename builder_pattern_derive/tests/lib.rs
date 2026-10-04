@@ -269,6 +269,19 @@ fn each_attribute_appends_individual_values() {
 }
 
 #[test]
+fn each_and_name_attributes_rename_bulk_and_item_setters() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(each = "item", name = "append_all")]
+        values: Vec<u8>,
+    }
+
+    let s = S::builder().item(1).append_all([2, 3]).item(4).build();
+
+    assert_eq!(s.values, vec![1, 2, 3, 4]);
+}
+
+#[test]
 fn default_expression_is_used_unless_overridden() {
     #[derive(Builder)]
     struct S {

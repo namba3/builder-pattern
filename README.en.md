@@ -157,6 +157,7 @@ Use one `#[builder(...)]` attribute per field and combine multiple settings insi
 `name` attribute changes the setter name.
 The value must be a valid Rust method name. Use a raw identifier such as `r#type` for a keyword.
 The legacy `#[builder = "setter_name"]` syntax is also supported.
+For a `Vec` field with `each`, `name` changes the bulk setter name and `each` sets the per-item setter name.
 
 ```rust
 #[derive(Builder)]
