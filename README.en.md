@@ -238,7 +238,7 @@ assert_eq!(s.a, 100);
 
 ### fixed
 
-`fixed` attribute sets a fixed value to the field. Since fixed fields have no setter, `name` cannot be used with `fixed`.
+`fixed` attribute sets a fixed value to the field. Since fixed fields have no setter, `name` and `each` cannot be used with `fixed`.
 You can specify not only the value but also the expression.
 
 ```rust

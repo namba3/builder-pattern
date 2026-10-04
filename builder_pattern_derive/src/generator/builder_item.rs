@@ -49,6 +49,19 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
                 "'name' cannot be used with 'fixed' because fixed fields do not have setters.",
             ));
         }
+        if matches!(
+            builder_attr.as_ref(),
+            Some(BuilderAttribute {
+                each: Some(_),
+                initial_expr: Some((InitialExpr::Fixed(_), _)),
+                ..
+            })
+        ) {
+            return Err(to_compile_error(
+                field,
+                "'each' cannot be used with 'fixed' because fixed fields do not have setters.",
+            ));
+        }
 
         let field_name = field
             .ident

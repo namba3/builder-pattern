@@ -1,0 +1,6 @@
+error: 'each' cannot be used with 'fixed' because fixed fields do not have setters.
+ --> tests/ui/fixed_with_each.rs:5:5
+  |
+5 | /     #[builder(as_is, fixed = vec![1], each = "item")]
+6 | |     values: Vec<u8>,
+  | |___________________^
