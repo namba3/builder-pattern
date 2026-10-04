@@ -24,6 +24,7 @@ pub fn impl_builder(
     let ast: syn::DeriveInput = syn::parse(input).map_err(|err| err.to_compile_error())?;
 
     let original_name = &ast.ident;
+    let original_visibility = &ast.vis;
     let original_generic_args = &ast.generics;
     if 1 <= original_generic_args.params.len() {
         return Err(to_compile_error(
@@ -69,7 +70,7 @@ pub fn impl_builder(
         );
 
         quote! {
-            struct #builder_name < #(#generics),* > {
+            #original_visibility struct #builder_name < #(#generics),* > {
                 #(#fields,)*
             }
         }
@@ -336,7 +337,7 @@ pub fn impl_builder(
 
     let code = quote! {
         impl #original_name {
-            pub fn builder() -> #builder_name < #(#initial_generic_args),* > {
+            #original_visibility fn builder() -> #builder_name < #(#initial_generic_args),* > {
                 #builder_name {
                     #initialize_builder_fields
                 }

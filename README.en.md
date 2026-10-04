@@ -36,6 +36,8 @@ assert_eq!(p.another_id, Some(2));
 assert_eq!(p.nums, [3, 4, 5, 6, 7, 8]);
 ```
 
+The generated `<StructName>Builder` type and `builder()` method have the same visibility as the original struct.
+
 ## Compile Guarantee
 
 Guarantees that all fields are set to a value and that the same field is never set more than once, except for the special fields.

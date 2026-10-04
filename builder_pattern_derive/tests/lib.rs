@@ -208,6 +208,23 @@ fn generated_state_names_do_not_shadow_user_types() {
     assert_eq!(s.value.0, 7);
 }
 
+mod public_api {
+    use super::Builder;
+
+    #[derive(Builder)]
+    pub struct PublicThing {
+        pub value: u32,
+    }
+}
+
+#[test]
+fn public_struct_exposes_its_generated_builder_type() {
+    let builder: public_api::PublicThingBuilder<_> = public_api::PublicThing::builder();
+    let value = builder.value(42).build();
+
+    assert_eq!(value.value, 42);
+}
+
 /// ```compile_fail
 /// use builder_pattern_derive::Builder;
 /// #[derive(Builder)]
