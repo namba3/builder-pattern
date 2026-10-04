@@ -1,0 +1,5 @@
+error: unit structs and tuple structs are not allowed.
+ --> tests/ui/tuple_struct.rs:4:1
+  |
+4 | struct Tuple(u8);
+  | ^^^^^^^^^^^^^^^^^

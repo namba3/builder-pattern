@@ -1,0 +1,5 @@
+error: specifying both 'default' and 'fixed' attributes at the same time is not allowed
+ --> tests/ui/conflicting_initial_values.rs:5:28
+  |
+5 |     #[builder(default = 1, fixed = 2)]
+  |                            ^^^^^

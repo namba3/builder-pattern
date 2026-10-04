@@ -1,0 +1,7 @@
+error: only one #[builder(...)] attribute is allowed per field.
+ --> tests/ui/duplicate_builder_attributes.rs:5:5
+  |
+5 | /     #[builder(name = "first")]
+6 | |     #[builder(name = "second")]
+7 | |     value: u8,
+  | |_____________^

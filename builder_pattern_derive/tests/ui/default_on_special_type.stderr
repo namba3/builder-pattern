@@ -1,0 +1,5 @@
+error: 'as_is' attribute is required to specify 'default' or 'fixed' attribute for bool, Option and Vec<T> fields
+ --> tests/ui/default_on_special_type.rs:5:15
+  |
+5 |     #[builder(default = true)]
+  |               ^^^^^^^

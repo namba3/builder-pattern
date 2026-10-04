@@ -1,0 +1,7 @@
+error: 'each' attribute is only allowed for Vec<T> fields.
+ --> tests/ui/each_on_non_vec.rs:3:10
+  |
+3 | #[derive(Builder)]
+  |          ^^^^^^^
+  |
+  = note: this error originates in the derive macro `Builder` (in Nightly builds, run with -Z macro-backtrace for more info)
