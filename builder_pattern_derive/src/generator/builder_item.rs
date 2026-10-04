@@ -63,6 +63,19 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
         if matches!(
             builder_attr.as_ref(),
             Some(BuilderAttribute {
+                each: Some(_),
+                initial_expr: Some((InitialExpr::Default(_), _)),
+                ..
+            })
+        ) {
+            return Err(to_compile_error(
+                field,
+                "'each' cannot be used with 'default' because 'default' requires 'as_is', which disables the Vec behavior required by 'each'.",
+            ));
+        }
+        if matches!(
+            builder_attr.as_ref(),
+            Some(BuilderAttribute {
                 as_is_denoted: true,
                 each: Some(_),
                 ..

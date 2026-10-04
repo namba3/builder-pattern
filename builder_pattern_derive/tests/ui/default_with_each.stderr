@@ -1,0 +1,6 @@
+error: 'each' cannot be used with 'default' because 'default' requires 'as_is', which disables the Vec behavior required by 'each'.
+ --> tests/ui/default_with_each.rs:5:5
+  |
+5 | /     #[builder(default = vec![1], each = "item")]
+6 | |     items: Vec<u8>,
+  | |__________________^
