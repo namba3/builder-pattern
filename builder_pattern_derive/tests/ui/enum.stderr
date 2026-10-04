@@ -1,0 +1,8 @@
+error: expected struct, found enum.
+ --> tests/ui/enum.rs:4:1
+  |
+4 | / enum Value {
+5 | |     First,
+6 | |     Second,
+7 | | }
+  | |_^

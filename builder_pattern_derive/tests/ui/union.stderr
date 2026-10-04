@@ -1,0 +1,8 @@
+error: expected struct, found union.
+ --> tests/ui/union.rs:4:1
+  |
+4 | / union Value {
+5 | |     integer: u32,
+6 | |     float: f32,
+7 | | }
+  | |_^
