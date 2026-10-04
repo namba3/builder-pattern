@@ -202,12 +202,12 @@ assert_eq!(s.nums, vec![1, 2, 3]);
 ### default
 
 `default` attribute sets a default value to the field.
-You can specify not only the value but also the expression.
+You can use a Rust expression directly. The legacy string form remains supported. To use a string literal as the value, use a block to distinguish it from the legacy form (for example, `default = { let text = "text"; text }`). The same syntax applies to `fixed`.
 
 ```rust
 #[derive(Builder)]
 struct S {
-    #[builder(default = "2u64.pow(2)")]
+    #[builder(default = 2u64.pow(2))]
     a: u64,
 }
 
@@ -226,7 +226,7 @@ You can specify not only the value but also the expression.
 ```rust
 #[derive(Builder)]
 struct S {
-    #[builder(fixed = "2u64.pow(2)")]
+    #[builder(fixed = 2u64.pow(2))]
     a: u64,
 }
 

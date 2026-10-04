@@ -316,27 +316,27 @@ impl TryFrom<&Meta> for BuilderAttribute {
 
         let default = items
             .get("default")
-            .map(|x| expect_string_literal(x, "default", "expression"))
+            .map(|x| expect_expression(x, "default"))
             .transpose()?
-            .map(|(expr, path, value, _)| {
+            .map(|(expr, path)| {
                 let Some(attr_name) = path.segments.last().map(|segment| segment.ident.clone())
                 else {
                     return Err(to_compile_error(path, "expected an attribute name."));
                 };
-                parse_expr(&expr, value).map(|e| (e, attr_name))
+                Ok((expr, attr_name))
             })
             .transpose()?;
 
         let fixed = items
             .get("fixed")
-            .map(|x| expect_string_literal(x, "fixed", "expression"))
+            .map(|x| expect_expression(x, "fixed"))
             .transpose()?
-            .map(|(expr, path, value, _)| {
+            .map(|(expr, path)| {
                 let Some(attr_name) = path.segments.last().map(|segment| segment.ident.clone())
                 else {
                     return Err(to_compile_error(path, "expected an attribute name."));
                 };
-                parse_expr(&expr, value).map(|e| (e, attr_name))
+                Ok((expr, attr_name))
             })
             .transpose()?;
         let initial_expr = match (default, fixed) {
@@ -354,8 +354,29 @@ impl TryFrom<&Meta> for BuilderAttribute {
     }
 }
 
-fn parse_expr<'a>(expr: &str, value: &'a Expr) -> Result<Expr, TokenStream> {
-    syn::parse_str(expr).map_err(|err| to_compile_error(value, err))
+fn expect_expression<'a>(
+    (path, value, meta): &(&'a Path, Option<&'a Expr>, &'a Meta),
+    attr_name: &str,
+) -> Result<(Expr, &'a Path), TokenStream> {
+    if let Some(value) = value {
+        let expression = match value {
+            // Preserve the original string-based syntax, where the string contents are parsed as
+            // Rust expression tokens. A string literal expression can be written in a block to
+            // distinguish it from this legacy form, e.g. `default = { let s = "text"; s }`.
+            Expr::Lit(ExprLit {
+                lit: Lit::Str(str), ..
+            }) => {
+                syn::parse_str::<Expr>(&str.value()).map_err(|err| to_compile_error(value, err))?
+            }
+            expression => (*expression).clone(),
+        };
+        Ok((expression, path))
+    } else {
+        Err(to_compile_error(
+            meta,
+            format!("expected '{attr_name} = <expression>', found '{attr_name}'"),
+        ))
+    }
 }
 
 fn parse_method_name(name: &str, value: &Expr, attribute: &str) -> Result<Ident, TokenStream> {
@@ -536,6 +557,14 @@ mod tests {
             #[builder(fixed = "2 + 2")]
             value: u32
         });
+        let native_default_field = parse_field(quote! {
+            #[builder(default = 2 + 2)]
+            value: u32
+        });
+        let native_fixed_field = parse_field(quote! {
+            #[builder(fixed = 2 + 2)]
+            value: u32
+        });
 
         assert!(matches!(
             item(&default_field).unwrap().initial_expr,
@@ -543,6 +572,14 @@ mod tests {
         ));
         assert!(matches!(
             item(&fixed_field).unwrap().initial_expr,
+            Some(InitialExpr::Fixed(_))
+        ));
+        assert!(matches!(
+            item(&native_default_field).unwrap().initial_expr,
+            Some(InitialExpr::Default(_))
+        ));
+        assert!(matches!(
+            item(&native_fixed_field).unwrap().initial_expr,
             Some(InitialExpr::Fixed(_))
         ));
     }

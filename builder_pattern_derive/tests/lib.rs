@@ -221,7 +221,7 @@ fn each_attribute_appends_individual_values() {
 fn default_expression_is_used_unless_overridden() {
     #[derive(Builder)]
     struct S {
-        #[builder(default = "2u8.pow(2)")]
+        #[builder(default = 2u8.pow(2))]
         value: u8,
     }
 
@@ -236,13 +236,32 @@ fn default_expression_is_used_unless_overridden() {
 fn fixed_expression_initializes_a_non_settable_field() {
     #[derive(Builder)]
     struct S {
-        #[builder(fixed = "2u8.pow(2)")]
+        #[builder(fixed = 2u8.pow(2))]
         value: u8,
     }
 
     let s = S::builder().build();
 
     assert_eq!(s.value, 4);
+}
+
+#[test]
+fn legacy_string_expressions_remain_supported() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(default = "2u8.pow(2)")]
+        defaulted: u8,
+        #[builder(fixed = "2u8.pow(3)")]
+        fixed: u8,
+        #[builder(default = { let text = "native string literal"; text })]
+        text: &'static str,
+    }
+
+    let s = S::builder().build();
+
+    assert_eq!(s.defaulted, 4);
+    assert_eq!(s.fixed, 8);
+    assert_eq!(s.text, "native string literal");
 }
 
 #[test]

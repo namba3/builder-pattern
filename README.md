@@ -202,11 +202,12 @@ assert_eq!(s.nums, vec![1, 2, 3]);
 ### `default`
 
 `default` 属性でフィールドの初期値を指定できます。値だけでなく式も指定できます。
+式は通常の Rust 構文で指定できます。従来の文字列形式も引き続き使えます。文字列リテラルそのものを初期値にする場合は、文字列形式との区別のためブロック式で指定します（例: `default = { let text = "text"; text }`）。`fixed` も同じ構文です。
 
 ```rust
 #[derive(Builder)]
 struct S {
-    #[builder(default = "2u64.pow(2)")]
+    #[builder(default = 2u64.pow(2))]
     a: u64,
 }
 
@@ -224,7 +225,7 @@ assert_eq!(s.a, 100);
 ```rust
 #[derive(Builder)]
 struct S {
-    #[builder(fixed = "2u64.pow(2)")]
+    #[builder(fixed = 2u64.pow(2))]
     a: u64,
 }
 

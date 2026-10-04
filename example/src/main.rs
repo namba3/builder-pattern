@@ -25,17 +25,17 @@ struct Something {
     #[builder(as_is)]
     bools: Vec<bool>,
 
-    #[builder(default = "100")]
+    #[builder(default = 100)]
     val1: u8,
-    #[builder(default = "100")]
+    #[builder(default = 100)]
     val2: u8,
 
-    #[builder(fixed = "[0,1,2,3]")]
+    #[builder(fixed = [0,1,2,3])]
     reserved1: [u8; 4],
-    #[builder(fixed = "init_reserved2()")]
+    #[builder(fixed = init_reserved2())]
     reserved2: [u8; 4],
 
-    #[builder(fixed = r#"String::from("z")"#)]
+    #[builder(fixed = String::from("z"))]
     z: String,
 }
 

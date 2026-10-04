@@ -199,13 +199,15 @@ use proc_macro_crate::{FoundCrate, crate_name};
 /// ### default
 ///
 /// `default` attribute sets a default value to the field.
-/// You can specify not only the value but also the expression.
+/// You can use a Rust expression directly. The legacy string form remains supported.
+/// To use a string literal as the value, use a block, such as
+/// `default = { let text = "text"; text }`. The same syntax applies to `fixed`.
 ///
 /// ```
 /// # use builder_pattern_derive::Builder;
 /// #[derive(Builder)]
 /// struct S {
-///     #[builder(default = "2u64.pow(2)")]
+///     #[builder(default = 2u64.pow(2))]
 ///     a: u64,
 /// }
 ///
@@ -219,13 +221,13 @@ use proc_macro_crate::{FoundCrate, crate_name};
 /// ### fixed
 ///
 /// `fixed` attribute sets a fixed value to the field.
-/// You can specify not only the value but also the expression.
+/// You can use a Rust expression directly. The legacy string form remains supported.
 ///
 /// ```
 /// # use builder_pattern_derive::Builder;
 /// #[derive(Builder)]
 /// struct S {
-///     #[builder(fixed = "2u64.pow(2)")]
+///     #[builder(fixed = 2u64.pow(2))]
 ///     a: u64,
 /// }
 ///
