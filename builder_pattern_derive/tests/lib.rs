@@ -65,6 +65,83 @@ fn vec_field_value_is_empty_by_default() {
     assert!(s.vec.is_empty());
 }
 
+#[test]
+fn custom_name_attribute_renames_the_setter() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(name = "set_value")]
+        value: u8,
+    }
+
+    let s = S::builder().set_value(42).build();
+
+    assert_eq!(s.value, 42);
+}
+
+#[test]
+fn as_is_uses_normal_setters_for_special_types() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(as_is)]
+        flag: bool,
+        #[builder(as_is)]
+        option: Option<u8>,
+        #[builder(as_is)]
+        values: Vec<u8>,
+    }
+
+    let s = S::builder()
+        .flag(true)
+        .option(Some(7))
+        .values(vec![1, 2])
+        .build();
+
+    assert!(s.flag);
+    assert_eq!(s.option, Some(7));
+    assert_eq!(s.values, vec![1, 2]);
+}
+
+#[test]
+fn each_attribute_appends_individual_values() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(each = "value")]
+        values: Vec<u8>,
+    }
+
+    let s = S::builder().value(1).value(2).build();
+
+    assert_eq!(s.values, vec![1, 2]);
+}
+
+#[test]
+fn default_expression_is_used_unless_overridden() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(default = "2u8.pow(2)")]
+        value: u8,
+    }
+
+    let defaulted = S::builder().build();
+    let overridden = S::builder().value(9).build();
+
+    assert_eq!(defaulted.value, 4);
+    assert_eq!(overridden.value, 9);
+}
+
+#[test]
+fn fixed_expression_initializes_a_non_settable_field() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(fixed = "2u8.pow(2)")]
+        value: u8,
+    }
+
+    let s = S::builder().build();
+
+    assert_eq!(s.value, 4);
+}
+
 /// ```compile_fail
 /// use builder_pattern_derive::Builder;
 /// #[derive(Builder)]

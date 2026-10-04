@@ -338,4 +338,73 @@ fn path_to_string(path: &Path, separater: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+
+    fn field_error(data: &Data) -> &'static str {
+        match fields(data) {
+            Ok(_) => panic!("expected the input to be rejected"),
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    fn fields_returns_named_non_empty_struct_fields() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Example { first: u8, second: String }
+        };
+
+        let named = fields(&input.data).unwrap();
+
+        assert_eq!(named.named.len(), 2);
+        assert_eq!(named.named[0].ident.as_ref().unwrap(), "first");
+        assert_eq!(named.named[1].ident.as_ref().unwrap(), "second");
+    }
+
+    #[test]
+    fn fields_rejects_empty_unit_and_tuple_structs() {
+        let empty: syn::DeriveInput = syn::parse_quote! { struct Empty {} };
+        let unit: syn::DeriveInput = syn::parse_quote! { struct Unit; };
+        let tuple: syn::DeriveInput = syn::parse_quote! { struct Tuple(u8); };
+
+        assert_eq!(
+            field_error(&empty.data),
+            "structs with no fields are not allowed."
+        );
+        assert_eq!(
+            field_error(&unit.data),
+            "unit structs and tuple structs are not allowed."
+        );
+        assert_eq!(
+            field_error(&tuple.data),
+            "unit structs and tuple structs are not allowed."
+        );
+    }
+
+    #[test]
+    fn fields_rejects_enums_and_unions() {
+        let enumeration: syn::DeriveInput = syn::parse_quote! { enum Example { A } };
+        let union: syn::DeriveInput = syn::parse_quote! { union Example { value: u32 } };
+
+        assert_eq!(
+            field_error(&enumeration.data),
+            "expected struct, found enum."
+        );
+        assert_eq!(field_error(&union.data), "expected struct, found union.");
+    }
+
+    #[test]
+    fn path_to_string_joins_qualified_segments() {
+        let path: Path = syn::parse_quote!(std::option::Option);
+
+        assert_eq!(path_to_string(&path, "::"), "std::option::Option");
+        assert_eq!(path_to_string(&path, "."), "std.option.Option");
+    }
+
+    #[test]
+    fn to_compile_error_includes_the_requested_message() {
+        let error = to_compile_error(quote!(field), "unsupported field");
+
+        assert!(error.to_string().contains("unsupported field"));
+    }
+}

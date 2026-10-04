@@ -397,4 +397,188 @@ fn to_camel_case(str: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use syn::Fields;
+
+    fn item<'a>(field: &'a Field) -> Result<BuilderItem<'a>, TokenStream> {
+        BuilderItem::try_from(field)
+    }
+
+    fn parse_field(tokens: TokenStream) -> Field {
+        let item: syn::ItemStruct = syn::parse2(quote! { struct Holder { #tokens } }).unwrap();
+        match item.fields {
+            Fields::Named(fields) => fields.named.into_iter().next().unwrap(),
+            _ => unreachable!("the test helper always parses named fields"),
+        }
+    }
+
+    fn error(field: &Field) -> TokenStream {
+        match item(field) {
+            Ok(_) => panic!("expected field parsing to fail"),
+            Err(error) => error,
+        }
+    }
+
+    fn error_message(error: TokenStream) -> String {
+        error.to_string()
+    }
+
+    #[test]
+    fn recognizes_special_field_types_and_leaves_other_types_unchanged() {
+        let bool_field = parse_field(quote!(enabled: bool));
+        let option_field = parse_field(quote!(value: Option<u32>));
+        let vec_field = parse_field(quote!(values: Vec<String>));
+        let custom_field = parse_field(quote!(value: crate::MyType));
+
+        assert!(matches!(
+            item(&bool_field).unwrap().ty,
+            BuilderItemType::Flag
+        ));
+        assert!(matches!(
+            item(&option_field).unwrap().ty,
+            BuilderItemType::Option { .. }
+        ));
+        assert!(matches!(
+            item(&vec_field).unwrap().ty,
+            BuilderItemType::Vec { .. }
+        ));
+        assert!(matches!(
+            item(&custom_field).unwrap().ty,
+            BuilderItemType::AsIs(_)
+        ));
+    }
+
+    #[test]
+    fn recognizes_qualified_special_field_types() {
+        let bool_field = parse_field(quote!(enabled: core::primitive::bool));
+        let option_field = parse_field(quote!(value: std::option::Option<u32>));
+        let vec_field = parse_field(quote!(values: std::vec::Vec<String>));
+
+        assert!(matches!(
+            item(&bool_field).unwrap().ty,
+            BuilderItemType::Flag
+        ));
+        assert!(matches!(
+            item(&option_field).unwrap().ty,
+            BuilderItemType::Option { .. }
+        ));
+        assert!(matches!(
+            item(&vec_field).unwrap().ty,
+            BuilderItemType::Vec { .. }
+        ));
+    }
+
+    #[test]
+    fn builder_attributes_override_setter_name_and_define_each_setter() {
+        let field = parse_field(quote! {
+            #[builder(name = "set_values", each = "value")]
+            values: Vec<u8>
+        });
+
+        let item = item(&field).unwrap();
+
+        assert_eq!(item.method_name, "set_values");
+        assert_eq!(item.each_method_name.unwrap(), "value");
+        assert_eq!(item.field_name, "values");
+    }
+
+    #[test]
+    fn builder_default_and_fixed_attributes_parse_expressions() {
+        let default_field = parse_field(quote! {
+            #[builder(default = "2 + 2")]
+            value: u32
+        });
+        let fixed_field = parse_field(quote! {
+            #[builder(fixed = "2 + 2")]
+            value: u32
+        });
+
+        assert!(matches!(
+            item(&default_field).unwrap().initial_expr,
+            Some(InitialExpr::Default(_))
+        ));
+        assert!(matches!(
+            item(&fixed_field).unwrap().initial_expr,
+            Some(InitialExpr::Fixed(_))
+        ));
+    }
+
+    #[test]
+    fn as_is_keeps_special_types_as_regular_fields() {
+        let field = parse_field(quote! {
+            #[builder(as_is)]
+            enabled: bool
+        });
+
+        assert!(matches!(item(&field).unwrap().ty, BuilderItemType::AsIs(_)));
+    }
+
+    #[test]
+    fn each_is_rejected_for_non_vec_fields() {
+        let field = parse_field(quote! {
+            #[builder(each = "value")]
+            value: u8
+        });
+
+        let error = error(&field);
+
+        assert!(
+            error_message(error).contains("'each' attribute is only allowed for Vec<T> fields.")
+        );
+    }
+
+    #[test]
+    fn default_and_fixed_require_as_is_on_special_fields() {
+        let default_field = parse_field(quote! {
+            #[builder(default = "true")]
+            enabled: bool
+        });
+        let fixed_field = parse_field(quote! {
+            #[builder(fixed = "1")]
+            value: Option<u8>
+        });
+
+        assert!(error_message(error(&default_field)).contains("'as_is' attribute is required"));
+        assert!(error_message(error(&fixed_field)).contains("'as_is' attribute is required"));
+    }
+
+    #[test]
+    fn duplicate_and_conflicting_attributes_are_rejected() {
+        let duplicate = parse_field(quote! {
+            #[builder(name = "first", name = "second")]
+            value: u8
+        });
+        let conflicting = parse_field(quote! {
+            #[builder(default = "1", fixed = "2")]
+            value: u8
+        });
+
+        assert!(error_message(error(&duplicate))
+            .contains("'name' attribute can be specified at most once."));
+        assert!(error_message(error(&conflicting)).contains(
+            "specifying both 'default' and 'fixed' attributes at the same time is not allowed"
+        ));
+    }
+
+    #[test]
+    fn unknown_attributes_and_custom_vec_allocators_are_rejected() {
+        let unknown = parse_field(quote! {
+            #[builder(unknown)]
+            value: u8
+        });
+        let allocator = parse_field(quote!(values: Vec<u8, CustomAllocator>));
+
+        assert!(error_message(error(&unknown))
+            .contains("expected 'as_is', 'name', 'each', 'default', or 'fixed'"));
+        assert!(error_message(error(&allocator))
+            .contains("Vec with custom allocator is not supported."));
+    }
+
+    #[test]
+    fn generated_builder_generic_identifiers_are_camel_cased() {
+        let field = parse_field(quote!(some_value_name: u8));
+
+        assert_eq!(item(&field).unwrap().generics_ident, "SomeValueName");
+    }
+}

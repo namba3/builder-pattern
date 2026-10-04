@@ -118,3 +118,50 @@ impl<T> Fixed<T> {
     }
 }
 impl<T> Ready for Fixed<T> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_ready<T: Ready>() {}
+
+    #[test]
+    fn value_markers_preserve_their_values() {
+        assert_eq!(Certain::new(1).0, 1);
+        assert_eq!(Default::new(2).0, 2);
+        assert_eq!(Fixed::new(3).0, 3);
+    }
+
+    #[test]
+    fn boolean_markers_represent_false_and_true() {
+        assert!(!False::new().0);
+        assert!(True::new().0);
+    }
+
+    #[test]
+    fn option_markers_represent_none_and_some() {
+        assert_eq!(None::<u8>::new().0, Option::None);
+        assert_eq!(Some::new(7).0, Option::Some(7));
+    }
+
+    #[test]
+    fn vector_marker_pushes_and_extends_values() {
+        let mut values = Vec::new();
+        values.push(1);
+        values.extend([2, 3]);
+
+        assert_eq!(values.0, std::vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn all_fully_initialized_markers_implement_ready() {
+        assert_ready::<Certain<u8>>();
+        assert_ready::<Default<u8>>();
+        assert_ready::<Fixed<u8>>();
+        assert_ready::<False>();
+        assert_ready::<True>();
+        assert_ready::<None<u8>>();
+        assert_ready::<Some<u8>>();
+        assert_ready::<Vec<u8>>();
+    }
+}
