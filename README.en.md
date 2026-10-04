@@ -152,6 +152,7 @@ Apply `#[builder(...)]` to fields. Struct-level builder attributes are not suppo
 
 Use one `#[builder(...)]` attribute per field and combine multiple settings inside it.
 The attribute must contain at least one setting; empty `#[builder()]` is rejected.
+Setting names must be unqualified.
 
 ### name
 

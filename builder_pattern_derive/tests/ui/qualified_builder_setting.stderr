@@ -1,0 +1,5 @@
+error: builder setting names must be unqualified.
+ --> tests/ui/qualified_builder_setting.rs:5:15
+  |
+5 |     #[builder(other::name = "set_value")]
+  |               ^^^^^^^^^^^

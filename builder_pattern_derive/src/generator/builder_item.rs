@@ -286,6 +286,12 @@ impl TryFrom<&Meta> for BuilderAttribute {
         let items = items.into_iter().try_fold(
             std::collections::HashMap::new(),
             |mut acc, (path, value, meta)| {
+                if path.leading_colon.is_some() || path.segments.len() != 1 {
+                    return Err(to_compile_error(
+                        path,
+                        "builder setting names must be unqualified.",
+                    ));
+                }
                 let Some(last_segment) = path.segments.last() else {
                     return Err(to_compile_error(path, "expected an attribute name."));
                 };
