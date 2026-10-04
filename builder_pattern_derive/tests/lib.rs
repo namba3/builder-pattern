@@ -170,6 +170,20 @@ fn generic_struct_supports_default_type_parameters() {
 }
 
 #[test]
+fn generic_struct_does_not_require_clone_for_field_types() {
+    struct NotClone(u8);
+
+    #[derive(Builder)]
+    struct GenericValue<T> {
+        value: T,
+    }
+
+    let value = GenericValue::builder().value(NotClone(42)).build();
+
+    assert_eq!(value.value.0, 42);
+}
+
+#[test]
 fn generic_struct_supports_default_const_parameters() {
     #[derive(Builder)]
     struct FixedArray<const N: usize = 2> {
