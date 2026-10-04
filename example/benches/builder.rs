@@ -115,7 +115,12 @@ fn main() {
             .build()
     });
 
-    measure("Vec literal / Vec items", warmup, iterations, || {
-        vec![black_box(1), black_box(2), black_box(3), black_box(4)]
+    measure("Vec push / Vec items", warmup, iterations, || {
+        let mut items = Vec::new();
+        items.push(black_box(1));
+        items.push(black_box(2));
+        items.push(black_box(3));
+        items.push(black_box(4));
+        items
     });
 }

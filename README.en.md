@@ -227,6 +227,7 @@ assert_eq!(s.a, 4);
 ## Benchmarks
 
 The benchmark uses `std::time::Instant` and `std::hint::black_box` without nightly's benchmark feature. Run it in release mode.
+It compares a builder with four required fields against a struct literal, and four `each` calls against four `Vec::push` calls.
 
 ```sh
 cargo bench -p example --bench builder
