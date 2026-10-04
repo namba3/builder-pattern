@@ -166,9 +166,10 @@ pub(crate) fn impl_builder_with_support_path(
         let phantom_type = quote! {
             ::core::marker::PhantomData<fn() -> #original_name #original_type_generics>
         };
+        let builder_doc = format!("A type-state builder for `{original_name}`.");
 
         quote! {
-            #[allow(missing_docs)]
+            #[doc = #builder_doc]
             #[must_use = "call `build()` to construct the value"]
             #original_visibility struct #builder_name #builder_generics #builder_where_clause {
                 #(#fields,)*
@@ -286,28 +287,37 @@ pub(crate) fn impl_builder_with_support_path(
             output_fields.push(quote! { #phantom_field: __builder_phantom, });
 
             match target_ty {
-                BuilderItemType::Flag => quote! {
-                    #[allow(missing_docs)]
-                    impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
-                        #[inline]
-                        pub fn #target_method_name(self) -> #builder_name<#(#next_builder_generic_args),*> {
-                            let #builder_name { #(#moved_fields)* } = self;
-                            #builder_name { #(#output_fields)* }
+                BuilderItemType::Flag => {
+                    let setter_doc = format!("Sets the `{target_field_name}` field to `true`.");
+                    quote! {
+                        impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
+                            #[doc = #setter_doc]
+                            #[inline]
+                            pub fn #target_method_name(self) -> #builder_name<#(#next_builder_generic_args),*> {
+                                let #builder_name { #(#moved_fields)* } = self;
+                                #builder_name { #(#output_fields)* }
+                            }
                         }
                     }
-                },
-                BuilderItemType::Option { inner_type } => quote! {
-                    #[allow(missing_docs)]
-                    impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
-                        #[inline]
-                        pub fn #target_method_name(self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
-                            let #builder_name { #(#moved_fields)* } = self;
-                            #builder_name { #(#output_fields)* }
+                }
+                BuilderItemType::Option { inner_type } => {
+                    let setter_doc = format!("Sets the `{target_field_name}` field to `Some(value)`.");
+                    quote! {
+                        impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
+                            #[doc = #setter_doc]
+                            #[inline]
+                            pub fn #target_method_name(self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
+                                let #builder_name { #(#moved_fields)* } = self;
+                                #builder_name { #(#output_fields)* }
+                            }
                         }
                     }
-                },
+                }
                 BuilderItemType::Vec { inner_type, .. } => {
+                    let each_doc = format!("Appends one item to the `{target_field_name}` field.");
+                    let setter_doc = format!("Appends items to the `{target_field_name}` field.");
                     let each = target.each_method_name.as_ref().map(|each_method_name| quote! {
+                        #[doc = #each_doc]
                         #[inline]
                         pub fn #each_method_name(mut self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
                             self.#target_field_name.push(#value_ident);
@@ -315,10 +325,10 @@ pub(crate) fn impl_builder_with_support_path(
                         }
                     });
                     quote! {
-                        #[allow(missing_docs)]
                         impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                             #each
 
+                            #[doc = #setter_doc]
                             #[inline]
                             pub fn #target_method_name(mut self, __builder_iter: impl ::core::iter::IntoIterator<Item = #inner_type>) -> #builder_name<#(#next_builder_generic_args),*> {
                                 self.#target_field_name.extend(__builder_iter);
@@ -327,16 +337,19 @@ pub(crate) fn impl_builder_with_support_path(
                         }
                     }
                 }
-                BuilderItemType::AsIs(ty) => quote! {
-                    #[allow(missing_docs)]
-                    impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
-                        #[inline]
-                        pub fn #target_method_name(self, #value_ident: #ty) -> #builder_name<#(#next_builder_generic_args),*> {
-                            let #builder_name { #(#moved_fields)* } = self;
-                            #builder_name { #(#output_fields)* }
+                BuilderItemType::AsIs(ty) => {
+                    let setter_doc = format!("Sets the `{target_field_name}` field.");
+                    quote! {
+                        impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
+                            #[doc = #setter_doc]
+                            #[inline]
+                            pub fn #target_method_name(self, #value_ident: #ty) -> #builder_name<#(#next_builder_generic_args),*> {
+                                let #builder_name { #(#moved_fields)* } = self;
+                                #builder_name { #(#output_fields)* }
+                            }
                         }
                     }
-                },
+                }
             }
         });
 
@@ -391,9 +404,9 @@ pub(crate) fn impl_builder_with_support_path(
         );
 
         quote! {
-            #[allow(missing_docs)]
             impl #build_impl_generics #builder_name<#(#builder_type_args),*> #build_where_clause
             {
+                /// Builds the value after all required fields have been set.
                 #[inline]
                 pub fn build(self) -> #original_name #original_type_generics {
                     let #builder_name { #(#builder_fields)* } = self;
@@ -406,8 +419,8 @@ pub(crate) fn impl_builder_with_support_path(
     };
 
     let code = quote! {
-        #[allow(missing_docs)]
         impl #original_impl_generics #original_name #original_type_generics #original_where_clause {
+            /// Creates a builder for this value.
             #original_visibility fn builder() -> #builder_name < #(#initial_builder_args),* > {
                 #builder_name {
                     #initialize_builder_fields
