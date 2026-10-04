@@ -14,6 +14,7 @@
 - Keep changes focused on the requested behavior. Avoid unrelated dependency, workspace layout, or public API changes.
 - Add or update tests for behavior changes, including compile-fail cases when the guarantee is about whether generated code compiles.
 - Update the README examples and documentation when public macro behavior changes.
+- Do not add personal information or machine-specific absolute file paths to repository files. Remove them when encountered; use repository-relative paths or placeholders when a path example is needed.
 
 ## Validation
 
