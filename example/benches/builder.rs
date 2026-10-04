@@ -1,10 +1,8 @@
 #![allow(dead_code)]
 
 use builder_pattern_derive::Builder;
-use std::{
-    hint::black_box,
-    time::{Duration, Instant},
-};
+use std::hint::black_box;
+use std::time::Instant;
 
 #[derive(Builder)]
 struct RequiredFields {
@@ -27,32 +25,65 @@ struct Items {
     items: Vec<u64>,
 }
 
-fn measure<T>(name: &str, warmup: usize, iterations: usize, mut operation: impl FnMut() -> T) {
-    for _ in 0..warmup {
-        black_box(operation());
-    }
-
+fn measure_once<T>(iterations: usize, operation: &mut impl FnMut() -> T) -> f64 {
     let start = Instant::now();
     for _ in 0..iterations {
         black_box(operation());
     }
-    let elapsed = start.elapsed();
-
-    println!(
-        "{name:<32} {:>10.2} ns/iter ({iterations} iterations, {})",
-        elapsed.as_nanos() as f64 / iterations as f64,
-        format_duration(elapsed),
-    );
+    start.elapsed().as_nanos() as f64 / iterations as f64
 }
 
-fn format_duration(duration: Duration) -> String {
-    if duration.as_secs() > 0 {
-        format!("{:.3} s", duration.as_secs_f64())
-    } else if duration.as_millis() > 0 {
-        format!("{:.3} ms", duration.as_secs_f64() * 1_000.0)
+fn summarize(samples: &mut [f64]) -> (f64, f64, f64) {
+    samples.sort_by(f64::total_cmp);
+
+    let median = if samples.len() % 2 == 0 {
+        (samples[samples.len() / 2 - 1] + samples[samples.len() / 2]) / 2.0
     } else {
-        format!("{:.3} µs", duration.as_secs_f64() * 1_000_000.0)
+        samples[samples.len() / 2]
+    };
+
+    (median, samples[0], samples[samples.len() - 1])
+}
+
+fn print_summary(name: &str, mut samples: Vec<f64>) {
+    let (median, min, max) = summarize(&mut samples);
+    println!("{name:<32} median {median:>8.2} ns/iter (min {min:.2}, max {max:.2})");
+}
+
+fn measure_pair<T, U>(
+    left_name: &str,
+    right_name: &str,
+    warmup: usize,
+    iterations: usize,
+    sample_count: usize,
+    mut left: impl FnMut() -> T,
+    mut right: impl FnMut() -> U,
+) {
+    for index in 0..warmup {
+        if index % 2 == 0 {
+            black_box(left());
+            black_box(right());
+        } else {
+            black_box(right());
+            black_box(left());
+        }
     }
+
+    let mut left_samples = Vec::with_capacity(sample_count);
+    let mut right_samples = Vec::with_capacity(sample_count);
+
+    for sample in 0..sample_count {
+        if sample % 2 == 0 {
+            left_samples.push(measure_once(iterations, &mut left));
+            right_samples.push(measure_once(iterations, &mut right));
+        } else {
+            right_samples.push(measure_once(iterations, &mut right));
+            left_samples.push(measure_once(iterations, &mut left));
+        }
+    }
+
+    print_summary(left_name, left_samples);
+    print_summary(right_name, right_samples);
 }
 
 fn iterations() -> usize {
@@ -70,57 +101,73 @@ fn iterations() -> usize {
     }
 }
 
+fn sample_count() -> usize {
+    const DEFAULT_SAMPLES: usize = 11;
+
+    match std::env::var("BENCH_SAMPLES") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(samples) if samples > 0 => samples,
+            _ => {
+                eprintln!("BENCH_SAMPLES must be a positive integer; using {DEFAULT_SAMPLES}");
+                DEFAULT_SAMPLES
+            }
+        },
+        Err(_) => DEFAULT_SAMPLES,
+    }
+}
+
 fn main() {
     let iterations = iterations();
     let warmup = iterations.min(10_000);
+    let samples = sample_count();
 
-    println!("Manual Instant benchmark (warmup: {warmup}, measured: {iterations})");
+    println!(
+        "Manual Instant benchmark (warmup: {warmup}, measured: {iterations} per sample, samples: {samples})"
+    );
 
-    measure(
+    measure_pair(
         "derive builder / required fields",
+        "struct literal / required fields",
         warmup,
         iterations,
+        samples,
         || {
-            let value = RequiredFields::builder()
+            RequiredFields::builder()
                 .first(black_box(1))
                 .second(black_box(2))
                 .third(black_box(3))
                 .fourth(black_box(4))
-                .build();
-            value
+                .build()
+        },
+        || DirectRequiredFields {
+            first: black_box(1),
+            second: black_box(2),
+            third: black_box(3),
+            fourth: black_box(4),
         },
     );
 
-    measure(
-        "struct literal / required fields",
+    measure_pair(
+        "derive builder / Vec items",
+        "Vec push / Vec items",
         warmup,
         iterations,
+        samples,
         || {
-            let value = DirectRequiredFields {
-                first: black_box(1),
-                second: black_box(2),
-                third: black_box(3),
-                fourth: black_box(4),
-            };
-            value
+            Items::builder()
+                .item(black_box(1))
+                .item(black_box(2))
+                .item(black_box(3))
+                .item(black_box(4))
+                .build()
+        },
+        || {
+            let mut items = Vec::new();
+            items.push(black_box(1));
+            items.push(black_box(2));
+            items.push(black_box(3));
+            items.push(black_box(4));
+            items
         },
     );
-
-    measure("derive builder / Vec items", warmup, iterations, || {
-        Items::builder()
-            .item(black_box(1))
-            .item(black_box(2))
-            .item(black_box(3))
-            .item(black_box(4))
-            .build()
-    });
-
-    measure("Vec push / Vec items", warmup, iterations, || {
-        let mut items = Vec::new();
-        items.push(black_box(1));
-        items.push(black_box(2));
-        items.push(black_box(3));
-        items.push(black_box(4));
-        items
-    });
 }

@@ -233,8 +233,10 @@ It compares a builder with four required fields against a struct literal, and fo
 cargo bench -p example --bench builder
 ```
 
-Set `BENCH_ITERS` to change the number of measured iterations (default: `1_000_000`). It warms up for up to 10,000 iterations before measuring.
+Set `BENCH_ITERS` to change measured iterations per sample (default: `1_000_000`). Each comparison runs 11 samples by default and reports the median, minimum, and maximum. The order of each pair alternates between samples. It warms up for up to 10,000 iterations before measuring.
 
 ```sh
-BENCH_ITERS=100000 cargo bench -p example --bench builder
+BENCH_ITERS=100000 BENCH_SAMPLES=15 cargo bench -p example --bench builder
 ```
+
+Set `BENCH_SAMPLES` to change the sample count.
