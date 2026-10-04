@@ -1,0 +1,13 @@
+error[E0599]: no method named `value` found for struct `RecordBuilder<Certain<Option<u8>>>` in the current scope
+  --> tests/ui/set_as_is_field_twice.rs:12:10
+   |
+ 3 | #[derive(Builder)]
+   |          ------- method `value` not found for this struct
+...
+10 |     let _record = Record::builder()
+   |                   ----------------- method `value` is available on `RecordBuilder<Uninit<Option<u8>>>`
+11 |         .value(Some(1))
+12 |         .value(Some(2))
+   |          ^^^^^--------- help: remove the arguments
+   |          |
+   |          field, not a method
