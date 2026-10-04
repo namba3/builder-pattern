@@ -772,6 +772,42 @@ mod tests {
     }
 
     #[test]
+    fn malformed_setting_values_are_reported_as_attribute_errors() {
+        let as_is_value = parse_field(quote! {
+            #[builder(as_is = true)]
+            value: u8
+        });
+        let non_string_name = parse_field(quote! {
+            #[builder(name = 1)]
+            value: u8
+        });
+        let non_string_each = parse_field(quote! {
+            #[builder(each = false)]
+            values: Vec<u8>
+        });
+        let missing_default = parse_field(quote! {
+            #[builder(default)]
+            value: u8
+        });
+
+        let as_is_error = error_message(error(&as_is_value));
+        let name_error = error_message(error(&non_string_name));
+        let each_error = error_message(error(&non_string_each));
+        let default_error = error_message(error(&missing_default));
+
+        assert!(
+            as_is_error.contains("expected 'as_is', found"),
+            "{as_is_error}"
+        );
+        assert!(name_error.contains("setter_name"), "{name_error}");
+        assert!(each_error.contains("setter_name"), "{each_error}");
+        assert!(
+            default_error.contains("default = <expression>"),
+            "{default_error}"
+        );
+    }
+
+    #[test]
     fn unknown_attributes_and_custom_vec_allocators_are_rejected() {
         let unknown = parse_field(quote! {
             #[builder(unknown)]
