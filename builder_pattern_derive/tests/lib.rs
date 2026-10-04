@@ -590,6 +590,30 @@ fn vec_setter_accepts_non_clone_values_and_drops_them_once() {
 }
 
 #[test]
+fn vec_setter_drops_appended_values_when_iterator_panics() {
+    #[derive(Builder)]
+    struct S {
+        values: Vec<DropProbe>,
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    let mut yielded = false;
+    let values = std::iter::from_fn(|| {
+        if yielded {
+            panic!("iterator failed");
+        }
+        yielded = true;
+        Some(drop_probe(&drops))
+    });
+
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| S::builder().values(values)));
+
+    assert!(result.is_err());
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn each_setter_accepts_non_clone_values_and_drops_them_once() {
     #[derive(Builder)]
     struct S {
