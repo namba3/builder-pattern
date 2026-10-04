@@ -232,6 +232,40 @@ use proc_macro_crate::{FoundCrate, crate_name};
 /// let s = S::builder().build();
 /// assert_eq!(s.a, 4);
 /// ```
+///
+/// A field cannot use multiple `builder` attributes:
+///
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct DuplicateAttribute {
+///     #[builder(name = "first")]
+///     #[builder(name = "second")]
+///     value: u8,
+/// }
+/// fn main() {}
+/// ```
+///
+/// An attribute must match the field type:
+///
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct InvalidAttribute {
+///     #[builder(each = "entry")]
+///     value: u8,
+/// }
+/// fn main() {}
+/// ```
+///
+/// Tuple structs are not supported:
+///
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct UnsupportedTuple(u8);
+/// fn main() {}
+/// ```
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn builder_derive(input: TokenStream) -> TokenStream {
     let support_crate = match crate_name("builder_pattern") {

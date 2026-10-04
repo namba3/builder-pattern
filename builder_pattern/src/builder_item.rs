@@ -18,14 +18,19 @@ pub(crate) struct BuilderItem<'a> {
 impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
     type Error = TokenStream;
     fn try_from(field: &'a Field) -> Result<Self, Self::Error> {
-        let attr = field.attrs.iter().find(|attr| {
-            if let Some(name) = attr.path().segments.last() {
-                let name = &name.ident.to_string();
-                name == "builder"
-            } else {
-                false
-            }
+        let mut builder_attrs = field.attrs.iter().filter(|attr| {
+            attr.path()
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "builder")
         });
+        let attr = builder_attrs.next();
+        if builder_attrs.next().is_some() {
+            return Err(to_compile_error(
+                field,
+                "only one #[builder(...)] attribute is allowed per field.",
+            ));
+        }
 
         let meta = attr.map(|attr| &attr.meta);
 
@@ -597,6 +602,20 @@ mod tests {
         assert!(error_message(error(&conflicting)).contains(
             "specifying both 'default' and 'fixed' attributes at the same time is not allowed"
         ));
+    }
+
+    #[test]
+    fn repeated_builder_attributes_are_rejected() {
+        let field = parse_field(quote! {
+            #[builder(name = "first")]
+            #[builder(name = "second")]
+            value: u8
+        });
+
+        assert!(
+            error_message(error(&field))
+                .contains("only one #[builder(...)] attribute is allowed per field.")
+        );
     }
 
     #[test]

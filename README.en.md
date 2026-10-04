@@ -134,6 +134,8 @@ assert_eq!(s.nums, vec![1, 2, 3, 4, 5, 6]);
 
 ## Field attributes
 
+Use one `#[builder(...)]` attribute per field and combine multiple settings inside it.
+
 ### name
 
 `name` attribute changes the setter name.
