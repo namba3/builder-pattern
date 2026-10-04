@@ -298,7 +298,7 @@ impl TryFrom<&Meta> for BuilderAttribute {
                     }
                     _ => Err(to_compile_error(
                         path,
-                        format!("expected 'as_is', 'name', 'each', 'default', or 'fixed',  found '{name}'."),
+                        format!("expected 'as_is', 'name', 'each', 'default', or 'fixed', found '{name}'."),
                     )),
                 }
             },
@@ -714,8 +714,9 @@ mod tests {
         let allocator = parse_field(quote!(values: Vec<u8, CustomAllocator>));
 
         assert!(
-            error_message(error(&unknown))
-                .contains("expected 'as_is', 'name', 'each', 'default', or 'fixed'")
+            error_message(error(&unknown)).contains(
+                "expected 'as_is', 'name', 'each', 'default', or 'fixed', found 'unknown'."
+            )
         );
         assert!(
             error_message(error(&allocator))
