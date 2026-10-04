@@ -283,6 +283,25 @@ fn as_is_special_types_can_use_defaults_and_be_overridden() {
 }
 
 #[test]
+fn as_is_special_types_can_use_fixed_values() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(as_is, fixed = false)]
+        flag: bool,
+        #[builder(as_is, fixed = None)]
+        option: Option<u8>,
+        #[builder(as_is, fixed = vec![1, 2])]
+        values: Vec<u8>,
+    }
+
+    let value = S::builder().build();
+
+    assert!(!value.flag);
+    assert_eq!(value.option, None);
+    assert_eq!(value.values, vec![1, 2]);
+}
+
+#[test]
 fn each_attribute_appends_individual_values() {
     #[derive(Builder)]
     struct S {
