@@ -5,7 +5,7 @@ use syn::{
     TypePath, punctuated::Punctuated, token::Comma,
 };
 
-use crate::{path_to_string, to_compile_error};
+use crate::{path_matches, to_compile_error};
 
 pub(crate) struct BuilderItem<'a> {
     pub field_name: &'a Ident,
@@ -414,27 +414,19 @@ fn expect_string_literal<'a>(
 }
 
 fn is_option(path: &Path) -> bool {
-    let path = path_to_string(path, "::");
-    ["Option", "std::option::Option", "core::option::Option"]
-        .into_iter()
-        .find(|s| *s == path)
-        .is_some()
+    path_matches(path, &["Option"])
+        || path_matches(path, &["std", "option", "Option"])
+        || path_matches(path, &["core", "option", "Option"])
 }
 
 fn is_vec(path: &Path) -> bool {
-    let path = path_to_string(path, "::");
-    ["Vec", "std::vec::Vec"]
-        .into_iter()
-        .find(|s| *s == path)
-        .is_some()
+    path_matches(path, &["Vec"]) || path_matches(path, &["std", "vec", "Vec"])
 }
 
 fn is_bool(path: &Path) -> bool {
-    let path = path_to_string(path, "::");
-    ["bool", "core::primitive::bool", "std::primitive::bool"]
-        .into_iter()
-        .find(|s| *s == path)
-        .is_some()
+    path_matches(path, &["bool"])
+        || path_matches(path, &["core", "primitive", "bool"])
+        || path_matches(path, &["std", "primitive", "bool"])
 }
 
 #[cfg(test)]
@@ -471,6 +463,8 @@ mod tests {
         let option_field = parse_field(quote!(value: Option<u32>));
         let vec_field = parse_field(quote!(values: Vec<String>));
         let custom_field = parse_field(quote!(value: crate::MyType));
+        let option_alias_field = parse_field(quote!(value: Maybe<u32>));
+        let vec_alias_field = parse_field(quote!(values: Items<String>));
 
         assert!(matches!(
             item(&bool_field).unwrap().ty,
@@ -486,6 +480,14 @@ mod tests {
         ));
         assert!(matches!(
             item(&custom_field).unwrap().ty,
+            BuilderItemType::AsIs(_)
+        ));
+        assert!(matches!(
+            item(&option_alias_field).unwrap().ty,
+            BuilderItemType::AsIs(_)
+        ));
+        assert!(matches!(
+            item(&vec_alias_field).unwrap().ty,
             BuilderItemType::AsIs(_)
         ));
     }

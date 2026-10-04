@@ -489,15 +489,13 @@ where
     Error::new_spanned(tokens, message).to_compile_error()
 }
 
-///
-/// Convert path to string
-///
-fn path_to_string(path: &Path, separater: &str) -> String {
-    path.segments
-        .iter()
-        .map(|seg| seg.ident.to_string())
-        .collect::<Vec<_>>()
-        .join(separater)
+fn path_matches(path: &Path, expected_segments: &[&str]) -> bool {
+    path.segments.len() == expected_segments.len()
+        && path
+            .segments
+            .iter()
+            .zip(expected_segments)
+            .all(|(segment, expected)| segment.ident == *expected)
 }
 
 #[cfg(test)]
@@ -557,11 +555,14 @@ mod tests {
     }
 
     #[test]
-    fn path_to_string_joins_qualified_segments() {
-        let path: Path = syn::parse_quote!(std::option::Option);
+    fn path_matches_exact_qualified_segments() {
+        let standard_option: Path = syn::parse_quote!(::std::option::Option);
+        let core_vec: Path = syn::parse_quote!(core::vec::Vec);
+        let other_option: Path = syn::parse_quote!(my_crate::Option);
 
-        assert_eq!(path_to_string(&path, "::"), "std::option::Option");
-        assert_eq!(path_to_string(&path, "."), "std.option.Option");
+        assert!(path_matches(&standard_option, &["std", "option", "Option"]));
+        assert!(!path_matches(&core_vec, &["Vec"]));
+        assert!(!path_matches(&other_option, &["Option"]));
     }
 
     #[test]

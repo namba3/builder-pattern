@@ -88,6 +88,26 @@ fn generic_struct_supports_default_type_parameters() {
 }
 
 #[test]
+fn aliases_of_special_types_use_regular_field_setters() {
+    type Maybe<T> = Option<T>;
+    type Items<T> = Vec<T>;
+
+    #[derive(Builder)]
+    struct AliasedFields {
+        optional: Maybe<u8>,
+        values: Items<u8>,
+    }
+
+    let value = AliasedFields::builder()
+        .optional(Some(7))
+        .values(vec![1, 2, 3])
+        .build();
+
+    assert_eq!(value.optional, Some(7));
+    assert_eq!(value.values, [1, 2, 3]);
+}
+
+#[test]
 fn derive_expansion_resolves_renamed_runtime_dependency() {
     #[derive(Builder)]
     struct S {

@@ -77,6 +77,7 @@ S::builder()
 ## 特別なフィールド
 
 `bool`、`Option`、`Vec` のフィールドには特別な扱いがあります。
+型エイリアスは展開せずパス名で判定します。`bool` / `core::primitive::bool` / `std::primitive::bool`、`Option` / `core::option::Option` / `std::option::Option`、`Vec` / `std::vec::Vec` を認識し、型エイリアスは通常の必須フィールドとして扱います。
 
 ### `bool` フィールド
 
