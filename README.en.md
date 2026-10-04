@@ -42,7 +42,19 @@ Named-field structs, including empty structs, are supported. Generic structs ret
 
 ## Compile Guarantee
 
-Guarantees that all fields are set to a value and that the same field is never set more than once, except for the special fields.
+Ordinary required fields must be set exactly once; leaving one unset or setting it twice is a compile error. Setter call counts are:
+
+| Field | Setter calls |
+| --- | --- |
+| Ordinary field | Exactly once |
+| `bool` / `Option<T>` | Zero or once |
+| `Vec<T>` | Zero or more |
+| With `default` | Zero or once |
+| With `fixed` | Zero (no setter is generated) |
+| Special type with `as_is` and no `default` / `fixed` | Exactly once |
+
+The setters for `bool` and `Option<T>` cannot be called more than once. A `Vec<T>` setter can be called repeatedly.
+`as_is` makes a special type behave like an ordinary field. If `default` or `fixed` is also specified, its initialization rule applies.
 Generated setter names must be unique, and `build` is reserved for the generated build method. Duplicate or reserved names are reported as derive errors.
 
 This fails to compile because 'b' field has no value set.

@@ -1,0 +1,11 @@
+error[E0599]: no method named `value` found for struct `OptionsBuilder<builder_pattern::parts::Some<u8>>` in the current scope
+ --> tests/ui/set_option_twice.rs:9:41
+  |
+3 | #[derive(Builder)]
+  |          ------- method `value` not found for this struct
+...
+9 |     let _ = Options::builder().value(1).value(2).build();
+  |             ------------------          ^^^^^--- help: remove the arguments
+  |             |                           |
+  |             |                           field, not a method
+  |             method `value` is available on `OptionsBuilder<builder_pattern::parts::None<u8>>`
