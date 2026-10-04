@@ -491,6 +491,29 @@ fn built_struct_drops_each_required_value_once() {
 }
 
 #[test]
+fn option_setter_accepts_non_clone_values_and_drops_them_once() {
+    #[derive(Builder)]
+    struct S {
+        required: u8,
+        optional: Option<DropProbe>,
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    drop(S::builder().optional(drop_probe(&drops)));
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+
+    drops.store(0, Ordering::SeqCst);
+    let value = S::builder()
+        .required(7)
+        .optional(drop_probe(&drops))
+        .build();
+
+    assert_eq!(drops.load(Ordering::SeqCst), 0);
+    drop(value);
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn vec_setter_accepts_non_clone_values_and_drops_them_once() {
     #[derive(Builder)]
     struct S {
