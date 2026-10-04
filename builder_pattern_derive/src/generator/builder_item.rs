@@ -129,7 +129,9 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
 
         let initial_expr = initial_expr
             .map(|(i, attr_name)| match ty {
-                BuilderItemType::Flag | BuilderItemType::Option { .. } => Err(to_compile_error(
+                BuilderItemType::Flag
+                | BuilderItemType::Option { .. }
+                | BuilderItemType::Vec { .. } => Err(to_compile_error(
                     &attr_name,
                     "'as_is' attribute is required to specify 'default' or 'fixed' attribute for bool, Option and Vec<T> fields",
                 )),
@@ -673,9 +675,19 @@ mod tests {
             #[builder(fixed = "1")]
             value: Option<u8>
         });
+        let default_vec_field = parse_field(quote! {
+            #[builder(default = "vec![]")]
+            values: Vec<u8>
+        });
+        let fixed_vec_field = parse_field(quote! {
+            #[builder(fixed = "vec![]")]
+            values: Vec<u8>
+        });
 
         assert!(error_message(error(&default_field)).contains("'as_is' attribute is required"));
         assert!(error_message(error(&fixed_field)).contains("'as_is' attribute is required"));
+        assert!(error_message(error(&default_vec_field)).contains("'as_is' attribute is required"));
+        assert!(error_message(error(&fixed_vec_field)).contains("'as_is' attribute is required"));
     }
 
     #[test]
