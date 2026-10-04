@@ -1,0 +1,5 @@
+error: setter name `set_value` is generated more than once; each generated builder method must have a unique name.
+ --> tests/ui/duplicate_setter_name.rs:8:5
+  |
+8 |     second: u8,
+  |     ^^^^^^

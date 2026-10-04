@@ -1,0 +1,11 @@
+error[E0599]: no method named `id` found for struct `RecordBuilder<Certain<u64>>` in the current scope
+ --> tests/ui/set_field_twice.rs:9:37
+  |
+3 | #[derive(Builder)]
+  |          ------- method `id` not found for this struct
+...
+9 |     let _ = Record::builder().id(1).id(2).build();
+  |             -----------------       ^^--- help: remove the arguments
+  |             |                       |
+  |             |                       field, not a method
+  |             method `id` is available on `RecordBuilder<Uninit<u64>>`

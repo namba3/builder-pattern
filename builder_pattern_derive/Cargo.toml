@@ -10,3 +10,6 @@ proc-macro = true
 [dependencies]
 builder_support = { package = "builder_pattern", path = "../builder_pattern" }
 proc-macro-crate = "3"
+
+[dev-dependencies]
+trybuild = "1"

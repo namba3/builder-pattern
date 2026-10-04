@@ -1,0 +1,21 @@
+error[E0599]: the method `build` exists for struct `PairBuilder<u8, Certain<u8>, Uninit<u8>>`, but its trait bounds were not satisfied
+  --> tests/ui/generic_missing_required_field.rs:10:44
+   |
+ 3 | #[derive(Builder)]
+   |          ------- method `build` not found for this struct
+...
+10 |     let _ = Pair::<u8>::builder().first(1).build();
+   |                                            ^^^^^ method cannot be called on `PairBuilder<u8, Certain<u8>, Uninit<u8>>` due to unsatisfied trait bounds
+   |
+  ::: $WORKSPACE/builder_pattern/src/parts.rs
+   |
+   | pub struct Uninit<T>(core::mem::MaybeUninit<T>);
+   | -------------------- doesn't satisfy `Uninit<u8>: builder_pattern::parts::Ready<u8>`
+   |
+note: trait bound `Uninit<u8>: builder_pattern::parts::Ready<u8>` was not satisfied
+  --> tests/ui/generic_missing_required_field.rs:3:10
+   |
+ 3 | #[derive(Builder)]
+   |          ^^^^^^^ unsatisfied bound `Uninit<u8>: builder_pattern::parts::Ready<u8>` introduced here
+   = help: consider manually implementing the trait to avoid undesired bounds
+   = note: this error originates in the derive macro `Builder` (in Nightly builds, run with -Z macro-backtrace for more info)
