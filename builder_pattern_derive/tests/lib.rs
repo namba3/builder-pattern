@@ -46,6 +46,14 @@ fn basic_usage() {
 }
 
 #[test]
+fn empty_named_struct_can_be_built() {
+    #[derive(Builder)]
+    struct Empty {}
+
+    let _value = Empty::builder().build();
+}
+
+#[test]
 fn generic_struct_supports_lifetime_type_const_and_where_generics() {
     #[derive(Builder)]
     struct GenericData<'a, Iter, const N: usize>

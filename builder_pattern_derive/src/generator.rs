@@ -169,7 +169,7 @@ pub(crate) fn impl_builder_with_support_path(
         &parts_path,
     );
     let initialize_builder_fields = {
-        let initilizes = builder_items.iter().map(
+        let initializers = builder_items.iter().map(
             |BuilderItem {
                  field_name,
                  ty,
@@ -197,11 +197,10 @@ pub(crate) fn impl_builder_with_support_path(
             },
         );
 
-        quote! { #(#initilizes),* }
-    };
-    let initialize_builder_fields = quote! {
-        #initialize_builder_fields,
-        #phantom_field: ::core::marker::PhantomData,
+        quote! {
+            #(#initializers,)*
+            #phantom_field: ::core::marker::PhantomData,
+        }
     };
 
     let impl_setters = builder_items
@@ -420,13 +419,7 @@ fn fields(data: &Data) -> Result<&FieldsNamed, &'static str> {
         Data::Struct(DataStruct {
             fields: Fields::Named(fields),
             ..
-        }) => {
-            if fields.named.is_empty() {
-                Err("structs with no fields are not allowed.")
-            } else {
-                Ok(fields)
-            }
-        }
+        }) => Ok(fields),
         Data::Struct(_) => Err("unit structs and tuple structs are not allowed."),
         Data::Enum(_) => Err("expected struct, found enum."),
         Data::Union(_) => Err("expected struct, found union."),
@@ -542,28 +535,26 @@ mod tests {
     }
 
     #[test]
-    fn fields_returns_named_non_empty_struct_fields() {
+    fn fields_returns_named_struct_fields_including_empty_structs() {
         let input: syn::DeriveInput = syn::parse_quote! {
             struct Example { first: u8, second: String }
         };
+        let empty: syn::DeriveInput = syn::parse_quote! { struct Empty {} };
 
         let named = fields(&input.data).unwrap();
+        let empty_named = fields(&empty.data).unwrap();
 
         assert_eq!(named.named.len(), 2);
         assert_eq!(named.named[0].ident.as_ref().unwrap(), "first");
         assert_eq!(named.named[1].ident.as_ref().unwrap(), "second");
+        assert!(empty_named.named.is_empty());
     }
 
     #[test]
-    fn fields_rejects_empty_unit_and_tuple_structs() {
-        let empty: syn::DeriveInput = syn::parse_quote! { struct Empty {} };
+    fn fields_rejects_unit_and_tuple_structs() {
         let unit: syn::DeriveInput = syn::parse_quote! { struct Unit; };
         let tuple: syn::DeriveInput = syn::parse_quote! { struct Tuple(u8); };
 
-        assert_eq!(
-            field_error(&empty.data),
-            "structs with no fields are not allowed."
-        );
         assert_eq!(
             field_error(&unit.data),
             "unit structs and tuple structs are not allowed."
