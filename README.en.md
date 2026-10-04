@@ -129,6 +129,7 @@ assert_eq!(s.opt, Some(1));
 
 `Vec` fields are set empty vec by default and the setter takes the values of the Vec's inner type.
 In Vec fields, you can call the setter as many times as you like, each time appending values to the vec.
+The bulk setter accepts any `IntoIterator<Item = T>`, including arrays and iterator chains.
 
 ```rust
 #[derive(Builder)]

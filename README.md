@@ -129,6 +129,7 @@ assert_eq!(s.opt, Some(1));
 ### `Vec` フィールド
 
 `Vec` フィールドの初期値は空の `Vec` です。セッターには要素の値を渡します。セッターは何度でも呼び出せ、そのたびに要素が追加されます。
+一括セッターは `IntoIterator<Item = T>` を受け取るため、配列や iterator chain を渡せます。
 
 ```rust
 #[derive(Builder)]

@@ -352,6 +352,19 @@ fn each_attribute_appends_individual_values() {
 }
 
 #[test]
+fn vec_setter_accepts_iterator_chains() {
+    #[derive(Builder)]
+    struct S {
+        values: Vec<u8>,
+    }
+
+    let values = std::iter::once(1).chain([2, 3]);
+    let s = S::builder().values(values).build();
+
+    assert_eq!(s.values, vec![1, 2, 3]);
+}
+
+#[test]
 fn each_setter_can_use_a_raw_keyword_identifier() {
     #[derive(Builder)]
     struct S {
