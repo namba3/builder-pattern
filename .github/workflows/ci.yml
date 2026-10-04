@@ -55,8 +55,16 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run workspace tests
+      - name: Run workspace tests and diagnostic snapshots
+        if: matrix.toolchain == 'stable'
         run: cargo test --workspace
+
+      # trybuild snapshots contain compiler diagnostics that vary across Rust versions.
+      - name: Run MSRV tests without diagnostic snapshots
+        if: matrix.toolchain == '1.85.0'
+        run: |
+          cargo test -p builder_pattern -p example
+          cargo test -p builder_pattern_derive --lib --test lib
 
       - name: Compile benchmark target
         run: cargo bench -p example --bench builder --no-run
