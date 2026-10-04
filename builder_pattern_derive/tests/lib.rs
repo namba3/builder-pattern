@@ -550,6 +550,25 @@ fn each_setter_accepts_non_clone_values_and_drops_them_once() {
 }
 
 #[test]
+fn dropping_incomplete_builder_drops_each_vec_value_once() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(each = "value")]
+        values: Vec<DropProbe>,
+        required: String,
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    let builder = S::builder()
+        .value(drop_probe(&drops))
+        .value(drop_probe(&drops));
+
+    drop(builder);
+
+    assert_eq!(drops.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn defaulted_and_fixed_values_drop_once() {
     #[derive(Builder)]
     struct S {
