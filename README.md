@@ -175,6 +175,7 @@ assert_eq!(s.a, 1);
 ### `as_is`
 
 `as_is` 属性を付けると、特別なフィールドも通常のフィールドとして扱います。`each` は `Vec` の特殊な扱いを使うため、同じフィールドには併用できません。
+`bool`、`Option`、`Vec` に `default` または `fixed` を指定する場合も `as_is` が必要です。`default` のフィールドには省略可能なセッターが生成され、`fixed` のフィールドにはセッターが生成されません。
 
 ```rust
 #[derive(Builder)]

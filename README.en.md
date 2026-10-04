@@ -175,6 +175,7 @@ assert_eq!(s.a, 1);
 ### as_is
 
 `as_is` attribute treats the special fields as normal. Since `each` relies on special `Vec` handling, the two attributes cannot be used on the same field.
+Add `as_is` when using `default` or `fixed` on a `bool`, `Option`, or `Vec` field. A `default` field gets an optional setter; a `fixed` field has no setter.
 
 ```rust
 #[derive(Builder)]
