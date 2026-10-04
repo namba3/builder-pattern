@@ -142,6 +142,20 @@ fn generic_struct_supports_default_type_parameters() {
 }
 
 #[test]
+fn generic_struct_supports_default_const_parameters() {
+    #[derive(Builder)]
+    struct FixedArray<const N: usize = 2> {
+        values: [u8; N],
+    }
+
+    let defaulted = FixedArray::builder().values([1, 2]).build();
+    let explicit = FixedArray::<3>::builder().values([3, 4, 5]).build();
+
+    assert_eq!(defaulted.values, [1, 2]);
+    assert_eq!(explicit.values, [3, 4, 5]);
+}
+
+#[test]
 fn aliases_of_special_types_use_regular_field_setters() {
     type Maybe<T> = Option<T>;
     type Items<T> = Vec<T>;
