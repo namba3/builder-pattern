@@ -1,12 +1,12 @@
 # builder-pattern
 
-[English](README.en.md) | 日本語
+[English](README.en.md) | [日本語](README.md)
 
-Builder パターンの実装を生成する derive マクロです。
+A derive macro generating an impl of the builder pattern.
 
-このプロジェクトは Rust の derive マクロを書く練習用です。
+This project is for my practice writing Rust's derive macro.
 
-## 使用例
+## Example
 
 ```rust
 use builder_pattern_derive::Builder;
@@ -36,11 +36,11 @@ assert_eq!(p.another_id, Some(2));
 assert_eq!(p.nums, [3, 4, 5, 6, 7, 8]);
 ```
 
-## コンパイル時の保証
+## Compile Guarantee
 
-特別なフィールドを除き、すべてのフィールドに値を設定する必要があり、同じフィールドを複数回設定することはできません。
+Guarantees that all fields are set to a value and that the same field is never set more than once, except for the special fields.
 
-次の例は、`b` フィールドが未設定のためコンパイルに失敗します。
+This fails to compile because 'b' field has no value set.
 
 ```rust
 #[derive(Builder)]
@@ -51,10 +51,10 @@ struct S {
 
 S::builder()
     .a(1)
-    .build(); // ここでコンパイルエラー
+    .build(); // compile error here
 ```
 
-次の例は、`b` フィールドを2回設定しているためコンパイルに失敗します。
+And this fails to compile because 'b' field is set twice.
 
 ```rust
 #[derive(Builder)]
@@ -66,17 +66,17 @@ struct S {
 S::builder()
     .a(1)
     .b(2)
-    .b(3) // ここでコンパイルエラー
+    .b(3) // compile error here
     .build();
 ```
 
-## 特別なフィールド
+## Special fields
 
-`bool`、`Option`、`Vec` のフィールドには特別な扱いがあります。
+`bool`, `Option`, `Vec` fields are treated little specially.
 
-### `bool` フィールド
+### bool fields
 
-`bool` フィールドの初期値は `false` です。セッターは引数を取らず、呼び出すと値が `true` になります。
+`bool` fields are set false by default and the setter takes no arguments.
 
 ```rust
 #[derive(Builder)]
@@ -91,16 +91,15 @@ let s = S::builder().flag().build();
 assert_eq!(s.flag, true);
 ```
 
-### `Option` フィールド
+### Option fields
 
-`Option` フィールドの初期値は `None` です。セッターには `Option` の内側の型の値を渡します。
+`Option` fields are set None by default and the setter takes the value of the Option's inner type.
 
 ```rust
 #[derive(Builder)]
 struct S {
     opt: Option<u64>,
 }
-
 let s = S::builder().build();
 assert_eq!(s.opt, None);
 
@@ -108,9 +107,10 @@ let s = S::builder().opt(1).build();
 assert_eq!(s.opt, Some(1));
 ```
 
-### `Vec` フィールド
+### Vec fields
 
-`Vec` フィールドの初期値は空の `Vec` です。セッターには要素の値を渡します。セッターは何度でも呼び出せ、そのたびに要素が追加されます。
+`Vec` fields are set empty vec by default and the setter takes the values of the Vec's inner type.
+In Vec fields, you can call the setter as many times as you like, each time appending values to the vec.
 
 ```rust
 #[derive(Builder)]
@@ -128,11 +128,11 @@ let s = S::builder().nums([1, 2, 3]).nums([4, 5, 6]).build();
 assert_eq!(s.nums, vec![1, 2, 3, 4, 5, 6]);
 ```
 
-## フィールド属性
+## Field attributes
 
-### `name`
+### name
 
-`name` 属性でセッター名を変更できます。
+`name` attribute changes the setter name.
 
 ```rust
 #[derive(Builder)]
@@ -145,9 +145,9 @@ let s = S::builder().set_a(1).build();
 assert_eq!(s.a, 1);
 ```
 
-### `as_is`
+### as_is
 
-`as_is` 属性を付けると、特別なフィールドも通常のフィールドとして扱います。
+`as_is` attribute treats the special fields as normal.
 
 ```rust
 #[derive(Builder)]
@@ -170,9 +170,9 @@ assert_eq!(s.option, None);
 assert_eq!(s.vec, vec![1, 2, 3]);
 ```
 
-### `each`
+### each
 
-`each` 属性を付けると、`Vec` フィールドに要素を1つずつ追加するセッターを生成します。
+`each` attribute generates a setter that adds each value to the Vec field one by one.
 
 ```rust
 #[derive(Builder)]
@@ -189,9 +189,10 @@ let s = S::builder()
 assert_eq!(s.nums, vec![1, 2, 3]);
 ```
 
-### `default`
+### default
 
-`default` 属性でフィールドの初期値を指定できます。値だけでなく式も指定できます。
+`default` attribute sets a default value to the field.
+You can specify not only the value but also the expression.
 
 ```rust
 #[derive(Builder)]
@@ -207,9 +208,10 @@ let s = S::builder().a(100).build();
 assert_eq!(s.a, 100);
 ```
 
-### `fixed`
+### fixed
 
-`fixed` 属性でフィールドの値を固定できます。値だけでなく式も指定できます。
+`fixed` attribute sets a fixed value to the field.
+You can specify not only the value but also the expression.
 
 ```rust
 #[derive(Builder)]
