@@ -7,13 +7,13 @@ use syn::{
 
 use super::{path_matches, to_compile_error};
 
-pub(crate) struct BuilderItem<'a> {
-    pub field_name: &'a Ident,
-    pub method_name: Ident,
-    pub each_method_name: Option<Ident>,
-    pub ty: BuilderItemType<'a>,
-    pub generics_ident: Ident,
-    pub initial_expr: Option<InitialExpr>,
+pub(super) struct BuilderItem<'a> {
+    pub(super) field_name: &'a Ident,
+    pub(super) method_name: Ident,
+    pub(super) each_method_name: Option<Ident>,
+    pub(super) ty: BuilderItemType<'a>,
+    pub(super) generics_ident: Ident,
+    pub(super) initial_expr: Option<InitialExpr>,
 }
 impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
     type Error = TokenStream;
@@ -148,7 +148,7 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
     }
 }
 
-pub(crate) enum BuilderItemType<'a> {
+pub(super) enum BuilderItemType<'a> {
     Flag,
     Option { inner_type: &'a GenericArgument },
     Vec { inner_type: &'a GenericArgument },
@@ -232,7 +232,7 @@ impl<'a> ToTokens for BuilderItemType<'a> {
     }
 }
 
-pub enum InitialExpr {
+pub(super) enum InitialExpr {
     Default(Expr),
     Fixed(Expr),
 }
