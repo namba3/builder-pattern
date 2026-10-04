@@ -2,7 +2,9 @@ extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{Data, DataStruct, Error, Fields, FieldsNamed, Path, visit::Visit};
+use syn::{
+    Data, DataStruct, Error, Fields, FieldsNamed, GenericParam, Generics, Path, visit::Visit,
+};
 
 mod builder_item;
 pub mod parts;
@@ -35,14 +37,10 @@ pub fn impl_builder_with_support_path(
 
     let original_name = &ast.ident;
     let original_visibility = &ast.vis;
-    let original_generic_args = &ast.generics;
-    if 1 <= original_generic_args.params.len() {
-        return Err(to_compile_error(
-            original_generic_args,
-            "structs with generic parameters are not yet supported.",
-        )
-        .into());
-    }
+    let original_generics = &ast.generics;
+    let original_generic_args = generic_arguments(original_generics);
+    let (original_impl_generics, original_type_generics, original_where_clause) =
+        original_generics.split_for_impl();
 
     let builder_name = quote::format_ident!("{}Builder", original_name);
 
@@ -65,10 +63,21 @@ pub fn impl_builder_with_support_path(
             }
         }
     }
+    let phantom_field = loop {
+        let name = format!("__builder_generics{next_state_index}");
+        next_state_index += 1;
+        if used_identifiers.0.insert(name.clone()) {
+            break quote::format_ident!("{name}");
+        }
+    };
+
+    let builder_generics = with_state_generics(
+        original_generics,
+        builder_items.iter().map(|item| &item.generics_ident),
+    );
 
     let builder_struct = {
-        let generics = builder_items.iter().map(|item| &item.generics_ident);
-
+        let (_, _, builder_where_clause) = builder_generics.split_for_impl();
         let fields = builder_items.iter().map(
             |BuilderItem {
                  field_name,
@@ -78,10 +87,14 @@ pub fn impl_builder_with_support_path(
                 quote! { #field_name: #generics_ident }
             },
         );
+        let phantom_type = quote! {
+            ::core::marker::PhantomData<fn() -> #original_name #original_type_generics>
+        };
 
         quote! {
-            #original_visibility struct #builder_name < #(#generics),* > {
+            #original_visibility struct #builder_name #builder_generics #builder_where_clause {
                 #(#fields,)*
+                #phantom_field: #phantom_type,
             }
         }
     };
@@ -107,6 +120,11 @@ pub fn impl_builder_with_support_path(
             },
         },
     );
+    let initial_builder_args = original_generic_args
+        .iter()
+        .cloned()
+        .chain(initial_generic_args)
+        .collect::<Vec<_>>();
     let initialize_builder_fields = {
         let initilizes = builder_items.iter().map(
             |BuilderItem {
@@ -138,6 +156,10 @@ pub fn impl_builder_with_support_path(
 
         quote! { #(#initilizes),* }
     };
+    let initialize_builder_fields = quote! {
+        #initialize_builder_fields,
+        #phantom_field: ::core::marker::PhantomData,
+    };
 
     let impl_setters = builder_items
         .iter()
@@ -151,20 +173,18 @@ pub fn impl_builder_with_support_path(
             let target_ty = &target.ty;
             let target_method_name = &target.method_name;
 
-            let impl_generics = builder_items.iter().filter_map(
-                |BuilderItem {
-                     field_name,
-                     generics_ident,
-                     ..
-                 }| {
-                    if *field_name == target_field_name {
-                        None
-                    } else {
-                        quote! { #generics_ident }.into()
-                    }
-                },
+            let setter_generics = with_state_generics(
+                original_generics,
+                builder_items
+                    .iter()
+                    .filter(|item| item.field_name != target_field_name)
+                    .map(|item| &item.generics_ident),
             );
-            let current_builder_generic_args = builder_items.iter().map(
+            let (setter_impl_generics, _, setter_where_clause) = setter_generics.split_for_impl();
+            let current_builder_generic_args = original_generic_args
+                .iter()
+                .cloned()
+                .chain(builder_items.iter().map(
                 |BuilderItem {
                      field_name,
                      ty,
@@ -192,8 +212,12 @@ pub fn impl_builder_with_support_path(
                         },
                     }
                 },
-            );
-            let next_builder_generic_args = builder_items
+            ))
+                .collect::<Vec<_>>();
+            let next_builder_generic_args = original_generic_args
+                .iter()
+                .cloned()
+                .chain(builder_items
                 .iter()
                 .map(
                     |BuilderItem {
@@ -222,10 +246,10 @@ pub fn impl_builder_with_support_path(
                             },
                         }
                     },
-                )
+                ))
                 .collect::<Vec<_>>();
             let value_ident = quote::format_ident!("__builder_value");
-            let moved_fields = builder_items.iter().enumerate().map(|(index, item)| {
+            let mut moved_fields = builder_items.iter().enumerate().map(|(index, item)| {
                 let field_name = item.field_name;
                 let local_name = quote::format_ident!("__builder_field_{index}");
                 if field_name == target_field_name {
@@ -233,7 +257,8 @@ pub fn impl_builder_with_support_path(
                 } else {
                     quote! { #field_name: #local_name, }
                 }
-            });
+            }).collect::<Vec<_>>();
+            moved_fields.push(quote! { #phantom_field: __builder_phantom, });
             let replacement = match target_ty {
                 BuilderItemType::Flag => quote! { #parts_path::True::new() },
                 BuilderItemType::Option { .. } => {
@@ -244,7 +269,7 @@ pub fn impl_builder_with_support_path(
                 }
                 BuilderItemType::Vec { .. } => quote! {},
             };
-            let output_fields = builder_items.iter().enumerate().map(|(index, item)| {
+            let mut output_fields = builder_items.iter().enumerate().map(|(index, item)| {
                 let field_name = item.field_name;
                 let local_name = quote::format_ident!("__builder_field_{index}");
                 if field_name == target_field_name {
@@ -252,11 +277,12 @@ pub fn impl_builder_with_support_path(
                 } else {
                     quote! { #field_name: #local_name, }
                 }
-            });
+            }).collect::<Vec<_>>();
+            output_fields.push(quote! { #phantom_field: __builder_phantom, });
 
             match target_ty {
                 BuilderItemType::Flag => quote! {
-                    impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                    impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                         #[inline]
                         pub fn #target_method_name(self) -> #builder_name<#(#next_builder_generic_args),*> {
                             let #builder_name { #(#moved_fields)* } = self;
@@ -265,7 +291,7 @@ pub fn impl_builder_with_support_path(
                     }
                 },
                 BuilderItemType::Option { inner_type } => quote! {
-                    impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                    impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                         #[inline]
                         pub fn #target_method_name(self, #value_ident: #inner_type) -> #builder_name<#(#next_builder_generic_args),*> {
                             let #builder_name { #(#moved_fields)* } = self;
@@ -282,11 +308,11 @@ pub fn impl_builder_with_support_path(
                         }
                     });
                     quote! {
-                        impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                        impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                             #each
 
                             #[inline]
-                            pub fn #target_method_name<Iter: core::iter::IntoIterator<Item = #inner_type>>(mut self, __builder_iter: Iter) -> #builder_name<#(#next_builder_generic_args),*> {
+                            pub fn #target_method_name(mut self, __builder_iter: impl core::iter::IntoIterator<Item = #inner_type>) -> #builder_name<#(#next_builder_generic_args),*> {
                                 self.#target_field_name.extend(__builder_iter);
                                 self
                             }
@@ -294,7 +320,7 @@ pub fn impl_builder_with_support_path(
                     }
                 }
                 BuilderItemType::AsIs(ty) => quote! {
-                    impl<#(#impl_generics),*> #builder_name<#(#current_builder_generic_args),*> {
+                    impl #setter_impl_generics #builder_name<#(#current_builder_generic_args),*> #setter_where_clause {
                         #[inline]
                         pub fn #target_method_name(self, #value_ident: #ty) -> #builder_name<#(#next_builder_generic_args),*> {
                             let #builder_name { #(#moved_fields)* } = self;
@@ -306,24 +332,40 @@ pub fn impl_builder_with_support_path(
         });
 
     let impl_final_build = {
-        let impl_generics = builder_items
-            .iter()
-            .map(|BuilderItem { generics_ident, .. }| {
-                quote! { #generics_ident }
-            })
-            .collect::<Vec<_>>();
-        let constraints = builder_items.iter().map(
-            |BuilderItem {
-                 generics_ident, ty, ..
-             }| {
-                quote! { #generics_ident: #parts_path::Ready<#ty> }
-            },
+        let original_struct_constructor = if original_generic_args.is_empty() {
+            quote! { #original_name }
+        } else {
+            quote! { #original_name::<#(#original_generic_args),*> }
+        };
+        let mut build_generics = with_state_generics(
+            original_generics,
+            builder_items.iter().map(|item| &item.generics_ident),
         );
+        for item in &builder_items {
+            let generics_ident = &item.generics_ident;
+            let ty = &item.ty;
+            build_generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(#generics_ident: #parts_path::Ready<#ty>));
+        }
+        let (build_impl_generics, _, build_where_clause) = build_generics.split_for_impl();
+        let builder_type_args = original_generic_args
+            .iter()
+            .cloned()
+            .chain(builder_items.iter().map(|item| {
+                let generics_ident = &item.generics_ident;
+                quote! { #generics_ident }
+            }))
+            .collect::<Vec<_>>();
         let builder_fields = builder_items.iter().enumerate().map(|(index, item)| {
             let field_name = item.field_name;
             let local_name = quote::format_ident!("__builder_field_{index}");
             quote! { #field_name: #local_name, }
         });
+        let builder_fields = builder_fields
+            .chain(std::iter::once(quote! { #phantom_field: _, }))
+            .collect::<Vec<_>>();
         let built_fields = builder_items.iter().enumerate().map(
             |(index,
               BuilderItem {
@@ -340,13 +382,12 @@ pub fn impl_builder_with_support_path(
         );
 
         quote! {
-            impl<#(#impl_generics),*> #builder_name<#(#impl_generics),*>
-                where #(#constraints),*
+            impl #build_impl_generics #builder_name<#(#builder_type_args),*> #build_where_clause
             {
                 #[inline]
-                pub fn build(self) -> #original_name {
+                pub fn build(self) -> #original_name #original_type_generics {
                     let #builder_name { #(#builder_fields)* } = self;
-                    #original_name {
+                    #original_struct_constructor {
                         #(#built_fields)*
                     }
                 }
@@ -355,8 +396,8 @@ pub fn impl_builder_with_support_path(
     };
 
     let code = quote! {
-        impl #original_name {
-            #original_visibility fn builder() -> #builder_name < #(#initial_generic_args),* > {
+        impl #original_impl_generics #original_name #original_type_generics #original_where_clause {
+            #original_visibility fn builder() -> #builder_name < #(#initial_builder_args),* > {
                 #builder_name {
                     #initialize_builder_fields
                 }
@@ -400,6 +441,45 @@ fn fields(data: &Data) -> Result<&FieldsNamed, &'static str> {
         Data::Enum(_) => Err("expected struct, found enum."),
         Data::Union(_) => Err("expected struct, found union."),
     }
+}
+
+fn generic_arguments(generics: &Generics) -> Vec<TokenStream> {
+    generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Lifetime(param) => {
+                let lifetime = &param.lifetime;
+                quote! { #lifetime }
+            }
+            GenericParam::Type(param) => {
+                let ident = &param.ident;
+                quote! { #ident }
+            }
+            GenericParam::Const(param) => {
+                let ident = &param.ident;
+                quote! { #ident }
+            }
+        })
+        .collect()
+}
+
+fn with_state_generics<'a>(
+    original: &Generics,
+    state_parameters: impl IntoIterator<Item = &'a syn::Ident>,
+) -> Generics {
+    let mut generics = original.clone();
+    for param in &mut generics.params {
+        match param {
+            GenericParam::Type(param) => param.default = None,
+            GenericParam::Const(param) => param.default = None,
+            GenericParam::Lifetime(_) => {}
+        }
+    }
+    for state_parameter in state_parameters {
+        generics.params.push(syn::parse_quote!(#state_parameter));
+    }
+    generics
 }
 
 ///

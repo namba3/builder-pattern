@@ -46,6 +46,48 @@ fn basic_usage() {
 }
 
 #[test]
+fn generic_struct_supports_lifetime_type_const_and_where_generics() {
+    #[derive(Builder)]
+    struct GenericData<'a, Iter, const N: usize>
+    where
+        Iter: Clone,
+    {
+        label: &'a str,
+        values: [Iter; N],
+        #[builder(each = "item")]
+        items: Vec<Iter>,
+        enabled: bool,
+    }
+
+    let data = GenericData::builder()
+        .label("example")
+        .values([String::from("first"), String::from("second")])
+        .items([String::from("third")])
+        .item(String::from("fourth"))
+        .enabled()
+        .build();
+
+    assert_eq!(data.label, "example");
+    assert_eq!(data.values, ["first", "second"]);
+    assert_eq!(data.items, ["third", "fourth"]);
+    assert!(data.enabled);
+}
+
+#[test]
+fn generic_struct_supports_default_type_parameters() {
+    #[derive(Builder)]
+    struct GenericValue<T = u32> {
+        value: T,
+    }
+
+    let value = GenericValue::builder()
+        .value(String::from("generic"))
+        .build();
+
+    assert_eq!(value.value, "generic");
+}
+
+#[test]
 fn derive_expansion_resolves_renamed_runtime_dependency() {
     #[derive(Builder)]
     struct S {
@@ -273,3 +315,16 @@ fn should_fail_to_compile_when_no_field_value_is_given() {}
 /// }
 /// ```
 fn should_fail_to_compile_when_value_is_given_more_than_once_for_the_same_field() {}
+
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct Generic<T> {
+///     first: T,
+///     second: T,
+/// }
+/// fn main() {
+///     Generic::<u8>::builder().first(1).build();
+/// }
+/// ```
+fn should_fail_to_build_generic_struct_when_a_required_field_is_missing() {}

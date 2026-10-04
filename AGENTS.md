@@ -10,7 +10,7 @@
 
 - Read the relevant crate source and existing tests before changing macro behavior.
 - Preserve the compile-time guarantees documented in `README.md`: required fields must be set, and ordinary fields cannot be set more than once. `bool`, `Option`, and `Vec` fields, plus `as_is`, `each`, `default`, and `fixed` attributes, have documented special behavior.
-- The macro currently rejects generic structs. Do not imply generic support unless it is implemented and covered by suitable tests and documentation.
+- Generic named-field structs are supported. Keep type, lifetime, const generic, default parameter, and `where`-clause coverage in tests and document any limits before changing support.
 - Keep changes focused on the requested behavior. Avoid unrelated dependency, workspace layout, or public API changes.
 - Add or update tests for behavior changes, including compile-fail cases when the guarantee is about whether generated code compiles.
 - Update the README examples and documentation when public macro behavior changes.
