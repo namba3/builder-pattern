@@ -1,0 +1,5 @@
+error: setter name `build` conflicts with the generated `build()` method.
+ --> tests/ui/reserved_raw_build_setter_name.rs:6:5
+  |
+6 |     value: u8,
+  |     ^^^^^
