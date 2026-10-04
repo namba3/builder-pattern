@@ -2,7 +2,7 @@
 
 use builder_pattern_derive::Builder;
 use std::sync::{
-    Arc,
+    Arc, OnceLock,
     atomic::{AtomicUsize, Ordering},
 };
 
@@ -16,6 +16,15 @@ impl Drop for DropProbe {
 
 fn drop_probe(counter: &Arc<AtomicUsize>) -> DropProbe {
     DropProbe(Arc::clone(counter))
+}
+
+fn expression_drop_counter() -> &'static Arc<AtomicUsize> {
+    static DROPS: OnceLock<Arc<AtomicUsize>> = OnceLock::new();
+    DROPS.get_or_init(|| Arc::new(AtomicUsize::new(0)))
+}
+
+fn expression_drop_probe() -> DropProbe {
+    drop_probe(expression_drop_counter())
 }
 
 #[test]
@@ -301,6 +310,32 @@ fn built_struct_drops_each_required_value_once() {
         .first(drop_probe(&drops))
         .second(drop_probe(&drops))
         .build();
+
+    drop(value);
+
+    assert_eq!(drops.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn defaulted_and_fixed_values_drop_once() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(default = expression_drop_probe())]
+        defaulted: DropProbe,
+        #[builder(fixed = expression_drop_probe())]
+        fixed: DropProbe,
+    }
+
+    let drops = expression_drop_counter();
+    drops.store(0, Ordering::SeqCst);
+
+    drop(S::builder());
+
+    assert_eq!(drops.load(Ordering::SeqCst), 2);
+
+    drops.store(0, Ordering::SeqCst);
+    let value = S::builder().build();
+    assert_eq!(drops.load(Ordering::SeqCst), 0);
 
     drop(value);
 
