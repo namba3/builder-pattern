@@ -1,0 +1,5 @@
+error: 'as_is' attribute is required to specify 'default' or 'fixed' attribute for bool, Option and Vec<T> fields
+ --> tests/ui/fixed_on_vec_without_as_is.rs:5:15
+  |
+5 |     #[builder(fixed = vec![1, 2])]
+  |               ^^^^^
