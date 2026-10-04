@@ -183,7 +183,7 @@ fn absolute_paths_of_special_types_keep_special_behavior() {
 }
 
 #[test]
-fn derive_expansion_resolves_renamed_runtime_dependency() {
+fn derive_expansion_resolves_hyphenated_runtime_dependency_alias() {
     #[derive(Builder)]
     struct S {
         value: u8,

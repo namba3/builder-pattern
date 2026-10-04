@@ -14,5 +14,5 @@ quote = "1"
 syn = { version = "3", features = ["full", "visit"] }
 
 [dev-dependencies]
-builder_support = { package = "builder_pattern", path = "../builder_pattern" }
+builder-support = { package = "builder_pattern", path = "../builder_pattern" }
 trybuild = "1"
