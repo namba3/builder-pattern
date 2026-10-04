@@ -225,7 +225,7 @@ assert_eq!(s.a, 4);
 ## ベンチマーク
 
 nightly のベンチマーク機能を使わず、`std::time::Instant` と `std::hint::black_box` で計測します。release モードで実行してください。
-4つの必須フィールドを持つ構造体の Builder と構造体リテラル、および `each` による4回の要素追加と `Vec::push` 4回を比較します。
+4つの必須フィールドを持つ構造体の Builder と構造体リテラル、および `each` による4回の要素追加と `Vec::push` 4回を比較します。また、`bool`・`Option`・`default` 属性について、初期値を使う場合とセッターで上書きする場合を計測します。
 
 ```sh
 cargo bench -p example --bench builder

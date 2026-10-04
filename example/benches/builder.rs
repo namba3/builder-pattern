@@ -25,6 +25,20 @@ struct Items {
     items: Vec<u64>,
 }
 
+#[derive(Builder)]
+struct SpecialFields {
+    enabled: bool,
+    optional: Option<u64>,
+    #[builder(default = "7u64")]
+    count: u64,
+}
+
+struct DirectSpecialFields {
+    enabled: bool,
+    optional: Option<u64>,
+    count: u64,
+}
+
 fn measure_once<T>(iterations: usize, operation: &mut impl FnMut() -> T) -> f64 {
     let start = Instant::now();
     for _ in 0..iterations {
@@ -168,6 +182,40 @@ fn main() {
             items.push(black_box(3));
             items.push(black_box(4));
             items
+        },
+    );
+
+    measure_pair(
+        "derive builder / special defaults",
+        "struct literal / special defaults",
+        warmup,
+        iterations,
+        samples,
+        || SpecialFields::builder().build(),
+        || DirectSpecialFields {
+            enabled: false,
+            optional: None,
+            count: 7,
+        },
+    );
+
+    measure_pair(
+        "derive builder / special setters",
+        "struct literal / special values",
+        warmup,
+        iterations,
+        samples,
+        || {
+            SpecialFields::builder()
+                .enabled()
+                .optional(black_box(11))
+                .count(black_box(12))
+                .build()
+        },
+        || DirectSpecialFields {
+            enabled: true,
+            optional: Some(black_box(11)),
+            count: black_box(12),
         },
     );
 }
