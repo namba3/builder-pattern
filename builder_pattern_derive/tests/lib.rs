@@ -218,6 +218,28 @@ fn aliases_of_special_types_use_regular_field_setters() {
 }
 
 #[test]
+fn special_type_aliases_can_use_default_and_fixed_without_as_is() {
+    type Maybe<T> = Option<T>;
+    type Items<T> = Vec<T>;
+
+    #[derive(Builder)]
+    struct AliasedInitialValues {
+        #[builder(default = Some(1))]
+        optional: Maybe<u8>,
+        #[builder(fixed = vec![2, 3])]
+        values: Items<u8>,
+    }
+
+    let defaulted = AliasedInitialValues::builder().build();
+    let overridden = AliasedInitialValues::builder().optional(None).build();
+
+    assert_eq!(defaulted.optional, Some(1));
+    assert_eq!(defaulted.values, [2, 3]);
+    assert_eq!(overridden.optional, None);
+    assert_eq!(overridden.values, [2, 3]);
+}
+
+#[test]
 fn absolute_paths_of_special_types_keep_special_behavior() {
     #[derive(Builder)]
     struct AbsolutePaths {
