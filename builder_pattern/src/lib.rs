@@ -1,7 +1,7 @@
 extern crate proc_macro;
 
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{Data, DataStruct, Error, Fields, FieldsNamed, Path};
 
 mod builder_item;
@@ -27,7 +27,7 @@ pub fn impl_builder(
     let repr = ast
         .attrs
         .iter()
-        .find(|a| path_to_string(&a.path, "::").as_str() == "repr");
+        .find(|a| path_to_string(a.path(), "::").as_str() == "repr");
 
     let builder_name = quote::format_ident!("{}Builder", original_name);
 

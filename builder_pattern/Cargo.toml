@@ -1,9 +1,10 @@
 [package]
 name = "builder_pattern"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 
 [dependencies]
-syn = { version = "1", features = ["full"] }
+syn = { version = "3", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"

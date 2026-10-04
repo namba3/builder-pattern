@@ -1,8 +1,8 @@
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote, ToTokens};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
-    Expr, Field, GenericArgument, Lit, Meta, MetaNameValue, NestedMeta, Path, PathArguments, Type,
-    TypePath,
+    Expr, ExprLit, Field, GenericArgument, Lit, Meta, MetaNameValue, Path, PathArguments, Type,
+    TypePath, punctuated::Punctuated, token::Comma,
 };
 
 use crate::{path_to_string, to_compile_error};
@@ -19,7 +19,7 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
     type Error = TokenStream;
     fn try_from(field: &'a Field) -> Result<Self, Self::Error> {
         let attr = field.attrs.iter().find(|attr| {
-            if let Some(name) = attr.path.segments.last() {
+            if let Some(name) = attr.path().segments.last() {
                 let name = &name.ident.to_string();
                 name == "builder"
             } else {
@@ -27,13 +27,9 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
             }
         });
 
-        let meta = attr
-            .map(|attr| attr.parse_meta())
-            .transpose()
-            .map_err(|err| to_compile_error(attr, err))?;
+        let meta = attr.map(|attr| &attr.meta);
 
         let builder_attr: Option<BuilderAttribute> = meta
-            .as_ref()
             .map(|meta| BuilderAttribute::try_from(meta))
             .transpose()?;
 
@@ -65,19 +61,19 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
         let method_name = name.unwrap_or_else(|| field_name.clone());
 
         let each_method_name = each
-            .map(|(each, path)| match ty {
+            .map(|each| match ty {
                 BuilderItemType::Vec { .. } => Ok(each),
                 _ => Err(to_compile_error(
-                    path,
+                    &each,
                     "'each' attribute is only allowed for Vec<T> fields.",
                 )),
             })
             .transpose()?;
 
         let initial_expr = initial_expr
-            .map(|(i, meta)| match ty {
+            .map(|(i, attr_name)| match ty {
                 BuilderItemType::Flag | BuilderItemType::Option { .. } => Err(to_compile_error(
-                    meta,
+                    &attr_name,
                     "'as_is' attribute is required to specify 'default' or 'fixed' attribute for bool, Option and Vec<T> fields",
                 )),
                 _ => Ok(i),
@@ -109,7 +105,10 @@ pub(crate) enum BuilderItemType<'a> {
 impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
     type Error = TokenStream;
     fn try_from(ty: &'a Type) -> Result<Self, Self::Error> {
-        let path = if let Type::Path(TypePath { qself: None, path }) = ty {
+        let path = if let Type::Path(TypePath {
+            qself: None, path, ..
+        }) = ty
+        {
             path
         } else {
             return Ok(BuilderItemType::AsIs(ty));
@@ -180,26 +179,31 @@ pub enum InitialExpr {
     Fixed(Expr),
 }
 
-struct BuilderAttribute<'a> {
+struct BuilderAttribute {
     as_is_denoted: bool,
     name: Option<Ident>,
-    each: Option<(Ident, &'a Path)>,
-    initial_expr: Option<(InitialExpr, &'a Meta)>,
+    each: Option<Ident>,
+    initial_expr: Option<(InitialExpr, Ident)>,
 }
 
-impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
+impl TryFrom<&Meta> for BuilderAttribute {
     type Error = TokenStream;
-    fn try_from(meta: &'a Meta) -> Result<Self, Self::Error> {
+    fn try_from(meta: &Meta) -> Result<Self, Self::Error> {
         let list = match meta {
             Meta::Path(path) => {
-                return Err(to_compile_error(path,
+                return Err(to_compile_error(
+                    path,
                     format!(
-                    "expected 'builder = \"setter_name\"' or 'builder(name = \"setter_name\")', found '{}'.",
-                    path.into_token_stream())
-                ))
+                        "expected 'builder = \"setter_name\"' or 'builder(name = \"setter_name\")', found '{}'.",
+                        path.into_token_stream()
+                    ),
+                ));
             }
-            Meta::NameValue(MetaNameValue { lit, .. }) => {
-                return if let Lit::Str(str) = lit {
+            Meta::NameValue(MetaNameValue { value, .. }) => {
+                return if let Expr::Lit(ExprLit {
+                    lit: Lit::Str(str), ..
+                }) = value
+                {
                     Ok(BuilderAttribute {
                         as_is_denoted: false,
                         name: format_ident!("{}", str.value()).into(),
@@ -208,52 +212,45 @@ impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
                     })
                 } else {
                     Err(to_compile_error(
-                        lit,
+                        value,
                         format!(
                             "expected 'builder = \"setter_name\"', found 'builder = {}'.",
-                            lit.into_token_stream()
+                            value.into_token_stream()
                         ),
                     ))
-                }
+                };
             }
             Meta::List(list) => list,
         };
 
-        let items = list
-            .nested
+        let nested = list
+            .parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
+            .map_err(|err| to_compile_error(list, err))?;
+        let items = nested
             .iter()
             .map(|meta| match meta {
-                NestedMeta::Lit(lit) => Err(to_compile_error(
-                    lit,
+                Meta::NameValue(MetaNameValue { path, value, .. }) => Ok((path, Some(value), meta)),
+                Meta::Path(path) => Ok((path, None, meta)),
+                Meta::List(list) => Err(to_compile_error(
+                    list,
                     format!(
-                        "expected 'attr = value' format, found literal '{}'",
-                        lit.to_token_stream()
+                        "expected 'attr = value' format, found list '{}'",
+                        list.into_token_stream()
                     ),
                 )),
-                NestedMeta::Meta(meta) => match meta {
-                    Meta::NameValue(MetaNameValue { path, lit, .. }) => Ok((path, Some(lit), meta)),
-                    Meta::Path(path) => Ok((path, None, meta)),
-                    Meta::List(list) => Err(to_compile_error(
-                        list,
-                        format!(
-                            "expected 'attr = value' format, found list '{}'",
-                            list.into_token_stream()
-                        ),
-                    )),
-                },
             })
             .collect::<Result<Vec<_>, _>>()?;
 
         let items = items.into_iter().try_fold(
             std::collections::HashMap::new(),
-            |mut acc, (path, lit, meta)| {
+            |mut acc, (path, value, meta)| {
                 let name = path.segments.last().unwrap().ident.to_string();
                 match name.as_str() {
                     _name @ ("as_is" | "name" | "each" | "default" | "fixed") => {
                         if let Some(_prev) = acc.get(&name) {
                             Err(to_compile_error(path, format!("'{name}' attribute can be specified at most once.")))
                         } else {
-                            let _ = acc.insert(name, (path, lit, meta));
+                            let _ = acc.insert(name, (path, value, meta));
                             match (acc.get("default"), acc.get("fixed")) {
                                 (Some(_),Some(_)) => Err(to_compile_error(path, "specifying both 'default' and 'fixed' attributes at the same time is not allowed")),
                                 _ => Ok(acc),
@@ -284,24 +281,28 @@ impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
             .get("each")
             .map(|x| expect_string_literal(x, "each", "setter_name"))
             .transpose()?
-            .map(|(each, path, ..)| (format_ident!("{each}"), path));
+            .map(|(each, ..)| format_ident!("{each}"));
 
         let default = items
             .get("default")
             .map(|x| expect_string_literal(x, "default", "expression"))
             .transpose()?
-            .map(|(expr, _, lit, meta)| parse_expr(&expr, lit).map(|e| (e, lit, meta)))
+            .map(|(expr, path, value, _)| {
+                parse_expr(&expr, value).map(|e| (e, path.segments.last().unwrap().ident.clone()))
+            })
             .transpose()?;
 
         let fixed = items
             .get("fixed")
             .map(|x| expect_string_literal(x, "fixed", "expression"))
             .transpose()?
-            .map(|(expr, _, lit, meta)| parse_expr(&expr, lit).map(|e| (e, lit, meta)))
+            .map(|(expr, path, value, _)| {
+                parse_expr(&expr, value).map(|e| (e, path.segments.last().unwrap().ident.clone()))
+            })
             .transpose()?;
         let initial_expr = match (default, fixed) {
-            (Some((expr, _, meta)), None) => (InitialExpr::Default(expr), meta).into(),
-            (None, Some((expr, _, meta))) => (InitialExpr::Fixed(expr), meta).into(),
+            (Some((expr, attr_name)), None) => (InitialExpr::Default(expr), attr_name).into(),
+            (None, Some((expr, attr_name))) => (InitialExpr::Fixed(expr), attr_name).into(),
             _ => None,
         };
 
@@ -314,20 +315,20 @@ impl<'a> TryFrom<&'a Meta> for BuilderAttribute<'a> {
     }
 }
 
-fn parse_expr<'a>(expr: &str, lit: &'a Lit) -> Result<Expr, TokenStream> {
-    syn::parse_str(expr).map_err(|err| to_compile_error(lit, err))
+fn parse_expr<'a>(expr: &str, value: &'a Expr) -> Result<Expr, TokenStream> {
+    syn::parse_str(expr).map_err(|err| to_compile_error(value, err))
 }
 
 fn expect_flag<'a>(
-    (path, lit, meta): &(&'a Path, Option<&Lit>, &Meta),
+    (path, value, meta): &(&'a Path, Option<&Expr>, &Meta),
     attr_name: &str,
 ) -> Result<&'a Path, TokenStream> {
-    if let Some(lit) = lit {
+    if let Some(value) = value {
         Err(to_compile_error(
             meta,
             format!(
                 "expected '{attr_name}', found '{attr_name} = {}'.",
-                lit.into_token_stream()
+                value.into_token_stream()
             ),
         ))
         .into()
@@ -337,18 +338,20 @@ fn expect_flag<'a>(
 }
 
 fn expect_string_literal<'a>(
-    (path, lit, meta): &(&'a Path, Option<&'a Lit>, &'a Meta),
+    (path, value, meta): &(&'a Path, Option<&'a Expr>, &'a Meta),
     attr_name: &str,
     value_name: &str,
-) -> Result<(String, &'a Path, &'a Lit, &'a Meta), TokenStream> {
-    if let Some(lit) = lit {
-        match lit {
-            Lit::Str(str) => Ok((str.value(), path, *lit, meta)),
+) -> Result<(String, &'a Path, &'a Expr, &'a Meta), TokenStream> {
+    if let Some(value) = value {
+        match value {
+            Expr::Lit(ExprLit {
+                lit: Lit::Str(str), ..
+            }) => Ok((str.value(), path, value, meta)),
             _ => Err(to_compile_error(
-                lit,
+                value,
                 format!(
                     "expected '\"{value_name}\"', found '{}'",
-                    lit.into_token_stream()
+                    value.into_token_stream()
                 ),
             )),
         }
@@ -554,8 +557,10 @@ mod tests {
             value: u8
         });
 
-        assert!(error_message(error(&duplicate))
-            .contains("'name' attribute can be specified at most once."));
+        assert!(
+            error_message(error(&duplicate))
+                .contains("'name' attribute can be specified at most once.")
+        );
         assert!(error_message(error(&conflicting)).contains(
             "specifying both 'default' and 'fixed' attributes at the same time is not allowed"
         ));
@@ -569,10 +574,14 @@ mod tests {
         });
         let allocator = parse_field(quote!(values: Vec<u8, CustomAllocator>));
 
-        assert!(error_message(error(&unknown))
-            .contains("expected 'as_is', 'name', 'each', 'default', or 'fixed'"));
-        assert!(error_message(error(&allocator))
-            .contains("Vec with custom allocator is not supported."));
+        assert!(
+            error_message(error(&unknown))
+                .contains("expected 'as_is', 'name', 'each', 'default', or 'fixed'")
+        );
+        assert!(
+            error_message(error(&allocator))
+                .contains("Vec with custom allocator is not supported.")
+        );
     }
 
     #[test]

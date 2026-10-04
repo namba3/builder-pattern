@@ -1,4 +1,5 @@
 [workspace]
+resolver = "3"
 members = [
     "builder_pattern",
     "builder_pattern_derive",

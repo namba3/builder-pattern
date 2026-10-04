@@ -34,7 +34,7 @@ pub struct Uninit<T>(core::mem::ManuallyDrop<T>);
 impl<T> Uninit<T> {
     #[inline]
     pub unsafe fn uninit() -> Self {
-        core::mem::MaybeUninit::uninit().assume_init()
+        unsafe { core::mem::MaybeUninit::uninit().assume_init() }
     }
     #[inline]
     pub const unsafe fn new(t: T) -> Self {
