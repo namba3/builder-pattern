@@ -753,6 +753,15 @@ mod crate_visible_api {
     }
 }
 
+mod parent_visible_api {
+    use super::Builder;
+
+    #[derive(Builder)]
+    pub(super) struct ParentVisibleThing {
+        pub(super) value: u32,
+    }
+}
+
 #[test]
 fn public_struct_exposes_its_generated_builder_type() {
     let builder: public_api::PublicThingBuilder<_> = public_api::PublicThing::builder();
@@ -765,6 +774,15 @@ fn public_struct_exposes_its_generated_builder_type() {
 fn crate_visible_struct_exposes_a_crate_visible_builder_type() {
     let builder: crate_visible_api::CrateVisibleThingBuilder<_> =
         crate_visible_api::CrateVisibleThing::builder();
+    let value = builder.value(42).build();
+
+    assert_eq!(value.value, 42);
+}
+
+#[test]
+fn parent_visible_struct_exposes_a_parent_visible_builder_type() {
+    let builder: parent_visible_api::ParentVisibleThingBuilder<_> =
+        parent_visible_api::ParentVisibleThing::builder();
     let value = builder.value(42).build();
 
     assert_eq!(value.value, 42);
