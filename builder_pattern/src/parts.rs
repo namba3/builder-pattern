@@ -192,6 +192,18 @@ impl<T> Ready<T> for Fixed<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    struct DropProbe(Arc<AtomicUsize>);
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     fn assert_ready<T, Value>()
     where
@@ -262,5 +274,16 @@ mod tests {
         let value = unsafe { storage.assume_init() };
 
         assert_eq!(value, "ready");
+    }
+
+    #[test]
+    fn assume_init_transfers_drop_responsibility_once() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let storage = Uninit::new(DropProbe(Arc::clone(&drops)));
+        let value = unsafe { storage.assume_init() };
+
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+        drop(value);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
     }
 }
