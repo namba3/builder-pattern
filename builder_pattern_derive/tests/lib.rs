@@ -256,6 +256,33 @@ fn as_is_uses_normal_setters_for_special_types() {
 }
 
 #[test]
+fn as_is_special_types_can_use_defaults_and_be_overridden() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(as_is, default = false)]
+        flag: bool,
+        #[builder(as_is, default = None)]
+        option: Option<u8>,
+        #[builder(as_is, default = vec![1])]
+        values: Vec<u8>,
+    }
+
+    let defaulted = S::builder().build();
+    let overridden = S::builder()
+        .flag(true)
+        .option(Some(2))
+        .values(vec![3, 4])
+        .build();
+
+    assert!(!defaulted.flag);
+    assert_eq!(defaulted.option, None);
+    assert_eq!(defaulted.values, vec![1]);
+    assert!(overridden.flag);
+    assert_eq!(overridden.option, Some(2));
+    assert_eq!(overridden.values, vec![3, 4]);
+}
+
+#[test]
 fn each_attribute_appends_individual_values() {
     #[derive(Builder)]
     struct S {
