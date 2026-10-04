@@ -201,7 +201,7 @@ assert_eq!(s.vec, vec![1, 2, 3]);
 ### `each`
 
 `each` 属性を付けると、`Vec` フィールドに要素を1つずつ追加するセッターを生成します。
-値には有効な Rust メソッド名を指定してください。
+値には有効な Rust メソッド名を指定してください。キーワードを使う場合は `r#type` のような raw identifier を指定します。
 
 ```rust
 #[derive(Builder)]

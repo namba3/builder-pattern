@@ -352,6 +352,19 @@ fn each_attribute_appends_individual_values() {
 }
 
 #[test]
+fn each_setter_can_use_a_raw_keyword_identifier() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(each = "r#type")]
+        values: Vec<u8>,
+    }
+
+    let s = S::builder().r#type(1).r#type(2).build();
+
+    assert_eq!(s.values, vec![1, 2]);
+}
+
+#[test]
 fn each_and_name_attributes_rename_bulk_and_item_setters() {
     #[derive(Builder)]
     struct S {

@@ -201,7 +201,7 @@ assert_eq!(s.vec, vec![1, 2, 3]);
 ### each
 
 `each` attribute generates a setter that adds each value to the Vec field one by one.
-The value must be a valid Rust method name.
+The value must be a valid Rust method name. Use a raw identifier such as `r#type` for a keyword.
 
 ```rust
 #[derive(Builder)]
