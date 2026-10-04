@@ -413,14 +413,6 @@ pub(crate) fn impl_builder_with_support_path(
         #impl_final_build
     };
 
-    // let code = quote! {
-    //     impl #original_name {
-    //         fn builder() {
-    //             println!("{}", stringify!(#code));
-    //         }
-    //     }
-    // };
-
     Ok(code.into())
 }
 
