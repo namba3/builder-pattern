@@ -92,6 +92,32 @@ fn basic_usage() {
 }
 
 #[test]
+fn setters_can_be_called_in_any_order() {
+    #[derive(Builder)]
+    struct Record {
+        id: u8,
+        name: String,
+        enabled: bool,
+        optional: Option<u8>,
+        values: Vec<u8>,
+    }
+
+    let record = Record::builder()
+        .values([3, 4])
+        .optional(2)
+        .enabled()
+        .name(String::from("record"))
+        .id(1)
+        .build();
+
+    assert_eq!(record.id, 1);
+    assert_eq!(record.name, "record");
+    assert!(record.enabled);
+    assert_eq!(record.optional, Some(2));
+    assert_eq!(record.values, [3, 4]);
+}
+
+#[test]
 fn empty_named_struct_can_be_built() {
     #[derive(Builder)]
     struct Empty {}
