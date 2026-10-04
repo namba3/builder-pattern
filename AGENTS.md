@@ -3,7 +3,7 @@
 ## Project
 
 - This is a Rust workspace for practicing a derive macro that generates a type-state builder.
-- Workspace members are `builder_pattern` (generation support), `builder_pattern_derive` (the `Builder` proc macro), and `example` (usage example).
+- Workspace members are `builder_pattern` (runtime support types), `builder_pattern_derive` (macro expansion and the `Builder` proc macro), and `example` (usage example).
 - The root `README.md` documents the public behavior and supported field attributes. Keep it consistent with implementation changes.
 
 ## Change guidelines

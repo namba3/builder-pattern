@@ -5,7 +5,7 @@ use syn::{
     TypePath, punctuated::Punctuated, token::Comma,
 };
 
-use crate::{path_matches, to_compile_error};
+use super::{path_matches, to_compile_error};
 
 pub(crate) struct BuilderItem<'a> {
     pub field_name: &'a Ident,

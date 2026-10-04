@@ -3,8 +3,3 @@ name = "builder_pattern"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-
-[dependencies]
-syn = { version = "3", features = ["full", "visit"] }
-quote = "1"
-proc-macro2 = "1"

@@ -2,6 +2,8 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 
+mod generator;
+
 /// # Builder derive macro
 ///
 /// Generates a type-state builder for a named-field struct. Required fields must be set
@@ -50,7 +52,7 @@ pub fn builder_derive(input: TokenStream) -> TokenStream {
         }
     };
 
-    match builder_support::impl_builder_with_support_path(input, &support_crate) {
+    match generator::impl_builder_with_support_path(input, &support_crate) {
         Ok(code) => code,
         Err(why) => why,
     }

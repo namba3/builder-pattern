@@ -8,8 +8,11 @@ rust-version = "1.85"
 proc-macro = true
 
 [dependencies]
-builder_support = { package = "builder_pattern", path = "../builder_pattern" }
 proc-macro-crate = "3"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "3", features = ["full", "visit"] }
 
 [dev-dependencies]
+builder_support = { package = "builder_pattern", path = "../builder_pattern" }
 trybuild = "1"
