@@ -266,6 +266,48 @@ use proc_macro_crate::{FoundCrate, crate_name};
 /// struct UnsupportedTuple(u8);
 /// fn main() {}
 /// ```
+///
+/// Generated setter names must be unique, including names configured with
+/// `name` and `each`:
+///
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct DuplicateSetterNames {
+///     #[builder(name = "set_value")]
+///     first: u8,
+///     #[builder(name = "set_value")]
+///     second: u8,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A Vec field's `each` setter must not have the same name as its batch setter
+/// or another field's setter:
+///
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct ConflictingEachSetter {
+///     #[builder(each = "value")]
+///     values: Vec<u8>,
+///     #[builder(name = "value")]
+///     value: u8,
+/// }
+/// fn main() {}
+/// ```
+///
+/// The generated `build()` method name is reserved:
+///
+/// ```compile_fail
+/// use builder_pattern_derive::Builder;
+/// #[derive(Builder)]
+/// struct ReservedBuildName {
+///     #[builder(name = "build")]
+///     value: u8,
+/// }
+/// fn main() {}
+/// ```
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn builder_derive(input: TokenStream) -> TokenStream {
     let support_crate = match crate_name("builder_pattern") {

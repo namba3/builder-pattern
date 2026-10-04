@@ -118,6 +118,7 @@ pub fn impl_builder_with_support_path(
         .iter()
         .map(|field| BuilderItem::try_from(field))
         .collect::<Result<Vec<_>, _>>()?;
+    validate_setter_names(&builder_items)?;
     let mut used_identifiers = IdentCollector::default();
     used_identifiers.visit_derive_input(&ast);
     let mut next_state_index = 0;
@@ -476,6 +477,44 @@ fn with_state_generics<'a>(
         generics.params.push(syn::parse_quote!(#state_parameter));
     }
     generics
+}
+
+fn validate_setter_names(builder_items: &[BuilderItem<'_>]) -> Result<(), proc_macro::TokenStream> {
+    let mut used_names = std::collections::HashSet::new();
+
+    for item in builder_items {
+        if matches!(
+            (&item.ty, &item.initial_expr),
+            (BuilderItemType::AsIs(_), Some(InitialExpr::Fixed(_)))
+        ) {
+            continue;
+        }
+
+        for method_name in std::iter::once(&item.method_name).chain(item.each_method_name.iter()) {
+            let raw_name = method_name.to_string();
+            let name = raw_name.strip_prefix("r#").unwrap_or(&raw_name).to_owned();
+
+            if name == "build" {
+                return Err(to_compile_error(
+                    item.field_name,
+                    "setter name `build` conflicts with the generated `build()` method.",
+                )
+                .into());
+            }
+
+            if !used_names.insert(name.clone()) {
+                return Err(to_compile_error(
+                    item.field_name,
+                    format!(
+                        "setter name `{name}` is generated more than once; each generated builder method must have a unique name."
+                    ),
+                )
+                .into());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 ///

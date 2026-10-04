@@ -43,6 +43,7 @@ Named-field generic structs are supported, including type, lifetime, and const p
 ## Compile Guarantee
 
 Guarantees that all fields are set to a value and that the same field is never set more than once, except for the special fields.
+Generated setter names must be unique, and `build` is reserved for the generated build method. Duplicate or reserved names are reported as derive errors.
 
 This fails to compile because 'b' field has no value set.
 
