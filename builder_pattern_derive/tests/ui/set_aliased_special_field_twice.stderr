@@ -1,13 +1,17 @@
 error[E0599]: no method named `values` found for struct `RecordBuilder<builder_pattern::parts::Certain<Vec<u8>>>` in the current scope
   --> tests/ui/set_aliased_special_field_twice.rs:13:10
    |
- 5 | #[derive(Builder)]
-   |          ------- method `values` not found for this struct
+ 5 |   #[derive(Builder)]
+   |            ------- method `values` not found for this struct
 ...
-11 |     let _ = Record::builder()
-   |             ----------------- method `values` is available on `RecordBuilder<builder_pattern::parts::Uninit<Vec<u8>>>`
-12 |         .values(vec![1])
-13 |         .values(vec![2])
-   |          ^^^^^^--------- help: remove the arguments
-   |          |
-   |          field, not a method
+11 |       let _ = Record::builder()
+   |               -----------------
+   |               |
+   |  _____________method `values` is available on `RecordBuilder<builder_pattern::parts::Uninit<Vec<u8>>>`
+   | |
+12 | |         .values(vec![1])
+13 | |         .values(vec![2])
+   | |         -^^^^^^--------- help: remove the arguments
+   | |         ||
+   | |_________|field, not a method
+   |
