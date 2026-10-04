@@ -18,12 +18,10 @@ pub(crate) struct BuilderItem<'a> {
 impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
     type Error = TokenStream;
     fn try_from(field: &'a Field) -> Result<Self, Self::Error> {
-        let mut builder_attrs = field.attrs.iter().filter(|attr| {
-            attr.path()
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "builder")
-        });
+        let mut builder_attrs = field
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("builder"));
         let attr = builder_attrs.next();
         if builder_attrs.next().is_some() {
             return Err(to_compile_error(
@@ -594,6 +592,16 @@ mod tests {
         assert_eq!(item.method_name, "set_values");
         assert_eq!(item.each_method_name.unwrap(), "value");
         assert_eq!(item.field_name, "values");
+    }
+
+    #[test]
+    fn ignores_namespaced_builder_attributes() {
+        let field = parse_field(quote! {
+            #[tool::builder(name = "set_value")]
+            value: u8
+        });
+
+        assert_eq!(item(&field).unwrap().method_name, "value");
     }
 
     #[test]

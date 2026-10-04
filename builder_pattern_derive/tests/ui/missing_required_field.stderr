@@ -1,21 +1,21 @@
-error[E0599]: the method `build` exists for struct `RecordBuilder<Certain<u64>, Uninit<String>>`, but its trait bounds were not satisfied
+error[E0599]: the method `build` exists for struct `RecordBuilder<builder_pattern::parts::Certain<u64>, builder_pattern::parts::Uninit<String>>`, but its trait bounds were not satisfied
   --> tests/ui/missing_required_field.rs:10:37
    |
  3 | #[derive(Builder)]
    |          ------- method `build` not found for this struct
 ...
 10 |     let _ = Record::builder().id(1).build();
-   |                                     ^^^^^ method cannot be called on `RecordBuilder<Certain<u64>, Uninit<String>>` due to unsatisfied trait bounds
+   |                                     ^^^^^ method cannot be called due to unsatisfied trait bounds
    |
   ::: $WORKSPACE/builder_pattern/src/parts.rs
    |
    | pub struct Uninit<T>(core::mem::MaybeUninit<T>);
    | -------------------- doesn't satisfy `_: Ready<String>`
    |
-note: trait bound `Uninit<String>: builder_pattern::parts::Ready<String>` was not satisfied
+note: trait bound `builder_pattern::parts::Uninit<String>: builder_pattern::parts::Ready<String>` was not satisfied
   --> tests/ui/missing_required_field.rs:3:10
    |
  3 | #[derive(Builder)]
-   |          ^^^^^^^ unsatisfied bound `Uninit<String>: builder_pattern::parts::Ready<String>` introduced here
+   |          ^^^^^^^ unsatisfied bound `builder_pattern::parts::Uninit<String>: builder_pattern::parts::Ready<String>` introduced here
    = help: consider manually implementing the trait to avoid undesired bounds
    = note: this error originates in the derive macro `Builder` (in Nightly builds, run with -Z macro-backtrace for more info)

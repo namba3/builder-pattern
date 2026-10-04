@@ -1,4 +1,4 @@
-error[E0599]: no method named `enabled` found for struct `FlagsBuilder<True>` in the current scope
+error[E0599]: no method named `enabled` found for struct `FlagsBuilder<builder_pattern::parts::True>` in the current scope
  --> tests/ui/set_bool_twice.rs:9:40
   |
 3 | #[derive(Builder)]
@@ -8,4 +8,4 @@ error[E0599]: no method named `enabled` found for struct `FlagsBuilder<True>` in
   |             ----------------           ^^^^^^^-- help: remove the arguments
   |             |                          |
   |             |                          field, not a method
-  |             method `enabled` is available on `FlagsBuilder<False>`
+  |             method `enabled` is available on `FlagsBuilder<builder_pattern::parts::False>`
