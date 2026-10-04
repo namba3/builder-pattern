@@ -33,7 +33,10 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
             .map(|meta| BuilderAttribute::try_from(meta))
             .transpose()?;
 
-        let field_name = field.ident.as_ref().unwrap();
+        let field_name = field
+            .ident
+            .as_ref()
+            .ok_or_else(|| to_compile_error(field, "Builder only supports named fields."))?;
         let generics_ident = format_ident!("__BuilderState");
 
         let ty = if let Some(BuilderAttribute {
@@ -114,13 +117,15 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
             return Ok(BuilderItemType::AsIs(ty));
         };
 
-        let last_seg = path.segments.iter().last().unwrap();
+        let Some(last_seg) = path.segments.last() else {
+            return Ok(BuilderItemType::AsIs(ty));
+        };
         let item_type = match path {
             maybe_bool if is_bool(&maybe_bool) => BuilderItemType::Flag,
             maybe_opt if is_option(&maybe_opt) => {
                 if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
                     BuilderItemType::Option {
-                        inner_type: a.args.first().unwrap(),
+                        inner_type: single_type_argument(a, ty, "Option")?,
                     }
                 } else {
                     BuilderItemType::AsIs(ty)
@@ -128,10 +133,7 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
             }
             maybe_vec if is_vec(&maybe_vec) => {
                 if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
-                    let inner_type = a.args.first().unwrap();
-                    let allocator = a.args.iter().skip(1).take(1).last();
-
-                    if let Some(allocator) = allocator {
+                    if let Some(allocator) = a.args.iter().nth(1) {
                         return Err(to_compile_error(
                             allocator,
                             "Vec with custom allocator is not supported.",
@@ -139,8 +141,8 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
                     }
 
                     BuilderItemType::Vec {
-                        inner_type,
-                        allocator,
+                        inner_type: single_type_argument(a, ty, "Vec")?,
+                        allocator: None,
                     }
                 } else {
                     BuilderItemType::AsIs(ty)
@@ -150,6 +152,23 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
         };
         Ok(item_type)
     }
+}
+
+fn single_type_argument<'a>(
+    arguments: &'a syn::AngleBracketedGenericArguments,
+    ty: &Type,
+    type_name: &str,
+) -> Result<&'a GenericArgument, TokenStream> {
+    if arguments.args.len() == 1 {
+        if let Some(argument @ GenericArgument::Type(_)) = arguments.args.first() {
+            return Ok(argument);
+        }
+    }
+
+    Err(to_compile_error(
+        ty,
+        format!("expected {type_name}<T> with exactly one type argument."),
+    ))
 }
 impl<'a> ToTokens for BuilderItemType<'a> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
@@ -244,7 +263,10 @@ impl TryFrom<&Meta> for BuilderAttribute {
         let items = items.into_iter().try_fold(
             std::collections::HashMap::new(),
             |mut acc, (path, value, meta)| {
-                let name = path.segments.last().unwrap().ident.to_string();
+                let Some(last_segment) = path.segments.last() else {
+                    return Err(to_compile_error(path, "expected an attribute name."));
+                };
+                let name = last_segment.ident.to_string();
                 match name.as_str() {
                     _name @ ("as_is" | "name" | "each" | "default" | "fixed") => {
                         if let Some(_prev) = acc.get(&name) {
@@ -292,7 +314,11 @@ impl TryFrom<&Meta> for BuilderAttribute {
             .map(|x| expect_string_literal(x, "default", "expression"))
             .transpose()?
             .map(|(expr, path, value, _)| {
-                parse_expr(&expr, value).map(|e| (e, path.segments.last().unwrap().ident.clone()))
+                let Some(attr_name) = path.segments.last().map(|segment| segment.ident.clone())
+                else {
+                    return Err(to_compile_error(path, "expected an attribute name."));
+                };
+                parse_expr(&expr, value).map(|e| (e, attr_name))
             })
             .transpose()?;
 
@@ -301,7 +327,11 @@ impl TryFrom<&Meta> for BuilderAttribute {
             .map(|x| expect_string_literal(x, "fixed", "expression"))
             .transpose()?
             .map(|(expr, path, value, _)| {
-                parse_expr(&expr, value).map(|e| (e, path.segments.last().unwrap().ident.clone()))
+                let Some(attr_name) = path.segments.last().map(|segment| segment.ident.clone())
+                else {
+                    return Err(to_compile_error(path, "expected an attribute name."));
+                };
+                parse_expr(&expr, value).map(|e| (e, attr_name))
             })
             .transpose()?;
         let initial_expr = match (default, fixed) {
@@ -622,5 +652,28 @@ mod tests {
             error_message(error(&allocator))
                 .contains("Vec with custom allocator is not supported.")
         );
+    }
+
+    #[test]
+    fn special_types_with_invalid_generic_arguments_return_errors() {
+        let empty_option = parse_field(quote!(value: Option<>));
+        let multiple_option_arguments = parse_field(quote!(value: Option<u8, u16>));
+        let non_type_option_argument = parse_field(quote!(value: Option<'static>));
+        let empty_vec = parse_field(quote!(values: Vec<>));
+
+        for (field, type_name) in [
+            (&empty_option, "Option"),
+            (&multiple_option_arguments, "Option"),
+            (&non_type_option_argument, "Option"),
+            (&empty_vec, "Vec"),
+        ] {
+            let message = error_message(error(field));
+            assert!(
+                message.contains(&format!(
+                    "expected {type_name}<T> with exactly one type argument."
+                )),
+                "unexpected diagnostic for {type_name}: {message}"
+            );
+        }
     }
 }
