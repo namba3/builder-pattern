@@ -156,6 +156,7 @@ assert_eq!(s.nums, vec![1, 2, 3, 4, 5, 6]);
 
 `name` 属性でセッター名を変更できます。
 値には有効な Rust メソッド名を指定してください。キーワードを使う場合は `r#type` のような raw identifier を指定します。
+従来の `#[builder = "setter_name"]` 形式も利用できます。
 
 ```rust
 #[derive(Builder)]

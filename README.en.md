@@ -156,6 +156,7 @@ Use one `#[builder(...)]` attribute per field and combine multiple settings insi
 
 `name` attribute changes the setter name.
 The value must be a valid Rust method name. Use a raw identifier such as `r#type` for a keyword.
+The legacy `#[builder = "setter_name"]` syntax is also supported.
 
 ```rust
 #[derive(Builder)]

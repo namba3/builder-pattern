@@ -207,6 +207,19 @@ fn custom_name_attribute_renames_the_setter() {
 }
 
 #[test]
+fn legacy_name_attribute_syntax_renames_the_setter() {
+    #[derive(Builder)]
+    struct S {
+        #[builder = "set_value"]
+        value: u8,
+    }
+
+    let s = S::builder().set_value(42).build();
+
+    assert_eq!(s.value, 42);
+}
+
+#[test]
 fn custom_setter_name_can_use_a_raw_keyword_identifier() {
     #[derive(Builder)]
     struct S {
