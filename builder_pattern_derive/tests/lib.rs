@@ -491,6 +491,18 @@ fn generated_state_names_do_not_shadow_user_types() {
     assert_eq!(s.value.0, 7);
 }
 
+#[test]
+fn generated_state_names_do_not_shadow_raw_user_identifiers() {
+    #[derive(Builder)]
+    struct Generic<r#__BuilderState0> {
+        value: r#__BuilderState0,
+    }
+
+    let value = Generic::<u8>::builder().value(7).build();
+
+    assert_eq!(value.value, 7);
+}
+
 mod public_api {
     use super::Builder;
 

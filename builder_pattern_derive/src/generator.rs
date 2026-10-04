@@ -15,7 +15,9 @@ struct IdentCollector(std::collections::HashSet<String>);
 
 impl<'ast> Visit<'ast> for IdentCollector {
     fn visit_ident(&mut self, ident: &'ast syn::Ident) {
-        self.0.insert(ident.to_string());
+        let name = ident.to_string();
+        self.0
+            .insert(name.strip_prefix("r#").unwrap_or(&name).to_owned());
     }
 }
 
