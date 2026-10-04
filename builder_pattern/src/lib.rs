@@ -20,6 +20,74 @@ impl<'ast> Visit<'ast> for IdentCollector {
     }
 }
 
+#[derive(Clone, Copy)]
+enum BuilderStatePosition {
+    Initial,
+    BeforeSetter,
+    AfterSetter,
+}
+
+fn builder_state_type(
+    item: &BuilderItem<'_>,
+    position: BuilderStatePosition,
+    parts_path: &TokenStream,
+) -> TokenStream {
+    match &item.ty {
+        BuilderItemType::Flag => match position {
+            BuilderStatePosition::Initial | BuilderStatePosition::BeforeSetter => {
+                quote! { #parts_path::False }
+            }
+            BuilderStatePosition::AfterSetter => quote! { #parts_path::True },
+        },
+        BuilderItemType::Option { inner_type } => match position {
+            BuilderStatePosition::Initial | BuilderStatePosition::BeforeSetter => {
+                quote! { #parts_path::None<#inner_type> }
+            }
+            BuilderStatePosition::AfterSetter => quote! { #parts_path::Some<#inner_type> },
+        },
+        BuilderItemType::Vec { inner_type, .. } => quote! { #parts_path::Vec<#inner_type> },
+        BuilderItemType::AsIs(ty) => match (&item.initial_expr, position) {
+            (Some(InitialExpr::Fixed(_)), BuilderStatePosition::Initial) => {
+                quote! { #parts_path::Fixed<#ty> }
+            }
+            (Some(InitialExpr::Default(_)), BuilderStatePosition::Initial) => {
+                quote! { #parts_path::Default<#ty> }
+            }
+            (None, BuilderStatePosition::Initial) => quote! { #parts_path::Uninit<#ty> },
+            (Some(InitialExpr::Fixed(_)), _) => {
+                unreachable!("fixed fields do not have setter state transitions")
+            }
+            (Some(InitialExpr::Default(_)), BuilderStatePosition::BeforeSetter) => {
+                quote! { #parts_path::Default<#ty> }
+            }
+            (Some(InitialExpr::Default(_)), BuilderStatePosition::AfterSetter)
+            | (None, BuilderStatePosition::AfterSetter) => quote! { #parts_path::Certain<#ty> },
+            (None, BuilderStatePosition::BeforeSetter) => quote! { #parts_path::Uninit<#ty> },
+        },
+    }
+}
+
+fn builder_type_arguments(
+    original_generic_args: &[TokenStream],
+    builder_items: &[BuilderItem<'_>],
+    changed_field: Option<&syn::Ident>,
+    position: BuilderStatePosition,
+    parts_path: &TokenStream,
+) -> Vec<TokenStream> {
+    original_generic_args
+        .iter()
+        .cloned()
+        .chain(builder_items.iter().map(|item| {
+            if changed_field.is_none() || changed_field == Some(item.field_name) {
+                builder_state_type(item, position, parts_path)
+            } else {
+                let generics_ident = &item.generics_ident;
+                quote! { #generics_ident }
+            }
+        }))
+        .collect()
+}
+
 pub fn impl_builder(
     input: proc_macro::TokenStream,
 ) -> Result<proc_macro::TokenStream, proc_macro::TokenStream> {
@@ -99,32 +167,13 @@ pub fn impl_builder_with_support_path(
         }
     };
 
-    let initial_generic_args = builder_items.iter().map(
-        |BuilderItem {
-             ty, initial_expr, ..
-         }| match ty {
-            BuilderItemType::Flag => quote! { #parts_path::False },
-            BuilderItemType::Option { inner_type } => {
-                quote! { #parts_path::None< #inner_type > }
-            }
-
-            BuilderItemType::Vec { inner_type, .. } => {
-                quote! { #parts_path::Vec< #inner_type > }
-            }
-            BuilderItemType::AsIs(ty) => match initial_expr {
-                Some(InitialExpr::Default(_)) => {
-                    quote! { #parts_path::Default< #ty > }
-                }
-                Some(InitialExpr::Fixed(_)) => quote! { #parts_path::Fixed< #ty > },
-                None => quote! { #parts_path::Uninit< #ty > },
-            },
-        },
+    let initial_builder_args = builder_type_arguments(
+        &original_generic_args,
+        &builder_items,
+        None,
+        BuilderStatePosition::Initial,
+        &parts_path,
     );
-    let initial_builder_args = original_generic_args
-        .iter()
-        .cloned()
-        .chain(initial_generic_args)
-        .collect::<Vec<_>>();
     let initialize_builder_fields = {
         let initilizes = builder_items.iter().map(
             |BuilderItem {
@@ -181,73 +230,20 @@ pub fn impl_builder_with_support_path(
                     .map(|item| &item.generics_ident),
             );
             let (setter_impl_generics, _, setter_where_clause) = setter_generics.split_for_impl();
-            let current_builder_generic_args = original_generic_args
-                .iter()
-                .cloned()
-                .chain(builder_items.iter().map(
-                |BuilderItem {
-                     field_name,
-                     ty,
-                     generics_ident,
-                     initial_expr,
-                     ..
-                 }| {
-                    if *field_name != target_field_name {
-                        return quote! { #generics_ident };
-                    }
-                    match ty {
-                        BuilderItemType::Flag => quote! { #parts_path::False },
-                        BuilderItemType::Option { inner_type } => {
-                            quote! { #parts_path::None<#inner_type> }
-                        }
-                        BuilderItemType::Vec { inner_type, .. } => {
-                            quote! { #parts_path::Vec<#inner_type> }
-                        }
-                        BuilderItemType::AsIs(ty) => match initial_expr {
-                            Some(InitialExpr::Default(_)) => {
-                                quote! { #parts_path::Default<#ty> }
-                            }
-                            Some(InitialExpr::Fixed(_)) => unreachable!(),
-                            None => quote! { #parts_path::Uninit<#ty> },
-                        },
-                    }
-                },
-            ))
-                .collect::<Vec<_>>();
-            let next_builder_generic_args = original_generic_args
-                .iter()
-                .cloned()
-                .chain(builder_items
-                .iter()
-                .map(
-                    |BuilderItem {
-                         field_name,
-                         ty,
-                         generics_ident,
-                         initial_expr,
-                         ..
-                     }| {
-                        if *field_name != target_field_name {
-                            return quote! { #generics_ident };
-                        }
-                        match ty {
-                            BuilderItemType::Flag => quote! { #parts_path::True },
-                            BuilderItemType::Option { inner_type } => {
-                                quote! { #parts_path::Some<#inner_type> }
-                            }
-                            BuilderItemType::Vec { inner_type, .. } => {
-                                quote! { #parts_path::Vec<#inner_type> }
-                            }
-                            BuilderItemType::AsIs(ty) => match initial_expr {
-                                Some(InitialExpr::Default(_)) | None => {
-                                    quote! { #parts_path::Certain<#ty> }
-                                }
-                                Some(InitialExpr::Fixed(_)) => unreachable!(),
-                            },
-                        }
-                    },
-                ))
-                .collect::<Vec<_>>();
+            let current_builder_generic_args = builder_type_arguments(
+                &original_generic_args,
+                &builder_items,
+                Some(target_field_name),
+                BuilderStatePosition::BeforeSetter,
+                &parts_path,
+            );
+            let next_builder_generic_args = builder_type_arguments(
+                &original_generic_args,
+                &builder_items,
+                Some(target_field_name),
+                BuilderStatePosition::AfterSetter,
+                &parts_path,
+            );
             let value_ident = quote::format_ident!("__builder_value");
             let mut moved_fields = builder_items.iter().enumerate().map(|(index, item)| {
                 let field_name = item.field_name;
