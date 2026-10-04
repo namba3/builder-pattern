@@ -13,3 +13,4 @@ builder_pattern_derive = { path = "../builder_pattern_derive" }
 [[bench]]
 name = "builder"
 harness = false
+path = "../benches/builder.rs"
