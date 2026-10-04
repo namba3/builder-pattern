@@ -557,6 +557,24 @@ fn defaulted_and_fixed_values_drop_once() {
 }
 
 #[test]
+fn overridden_default_value_is_dropped_once() {
+    #[derive(Builder)]
+    struct S {
+        #[builder(default = expression_drop_probe())]
+        value: DropProbe,
+    }
+
+    let drops = expression_drop_counter();
+    drops.store(0, Ordering::SeqCst);
+
+    let value = S::builder().value(drop_probe(drops)).build();
+
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    drop(value);
+    assert_eq!(drops.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn generated_state_names_do_not_shadow_user_types() {
     #[allow(non_camel_case_types)]
     struct __BuilderState0(u8);
