@@ -56,6 +56,7 @@ Ordinary required fields must be set exactly once; leaving one unset or setting 
 The setters for `bool` and `Option<T>` cannot be called more than once. A `Vec<T>` setter can be called repeatedly.
 `as_is` makes a special type behave like an ordinary field. If `default` or `fixed` is also specified, its initialization rule applies.
 Generated setter names must be unique, and `build` is reserved for the generated build method. Duplicate or reserved names are reported as derive errors.
+Discarding a generated builder without using its return value produces a compiler warning to help catch a forgotten `build()` call.
 
 This fails to compile because 'b' field has no value set.
 

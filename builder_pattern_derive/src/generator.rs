@@ -168,6 +168,7 @@ pub(crate) fn impl_builder_with_support_path(
         };
 
         quote! {
+            #[must_use = "call `build()` to construct the value"]
             #original_visibility struct #builder_name #builder_generics #builder_where_clause {
                 #(#fields,)*
                 #phantom_field: #phantom_type,

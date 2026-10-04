@@ -1,0 +1,16 @@
+error: unused `RecordBuilder` that must be used
+  --> tests/ui/unused_builder.rs:11:5
+   |
+11 |     Record::builder().value(1);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: call `build()` to construct the value
+note: the lint level is defined here
+  --> tests/ui/unused_builder.rs:1:9
+   |
+ 1 | #![deny(unused_must_use)]
+   |         ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+   |
+11 |     let _ = Record::builder().value(1);
+   |     +++++++
