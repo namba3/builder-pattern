@@ -65,6 +65,7 @@ jobs:
         run: |
           cargo test -p builder_pattern -p example
           cargo test -p builder_pattern_derive --lib --test lib --test ui_pass
+          cargo test -p builder_pattern_derive --doc
 
       - name: Compile benchmark target
         run: cargo bench -p example --bench builder --no-run
