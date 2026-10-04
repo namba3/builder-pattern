@@ -34,9 +34,8 @@ impl<'a> TryFrom<&'a Field> for BuilderItem<'a> {
 
         let meta = attr.map(|attr| &attr.meta);
 
-        let builder_attr: Option<BuilderAttribute> = meta
-            .map(|meta| BuilderAttribute::try_from(meta))
-            .transpose()?;
+        let builder_attr: Option<BuilderAttribute> =
+            meta.map(BuilderAttribute::try_from).transpose()?;
 
         let field_name = field
             .ident
@@ -126,8 +125,8 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
             return Ok(BuilderItemType::AsIs(ty));
         };
         let item_type = match path {
-            maybe_bool if is_bool(&maybe_bool) => BuilderItemType::Flag,
-            maybe_opt if is_option(&maybe_opt) => {
+            maybe_bool if is_bool(maybe_bool) => BuilderItemType::Flag,
+            maybe_opt if is_option(maybe_opt) => {
                 if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
                     BuilderItemType::Option {
                         inner_type: single_type_argument(a, ty, "Option")?,
@@ -136,7 +135,7 @@ impl<'a> TryFrom<&'a Type> for BuilderItemType<'a> {
                     BuilderItemType::AsIs(ty)
                 }
             }
-            maybe_vec if is_vec(&maybe_vec) => {
+            maybe_vec if is_vec(maybe_vec) => {
                 if let PathArguments::AngleBracketed(a) = &last_seg.arguments {
                     if let Some(allocator) = a.args.iter().nth(1) {
                         return Err(to_compile_error(
@@ -402,7 +401,6 @@ fn expect_flag<'a>(
                 value.into_token_stream()
             ),
         ))
-        .into()
     } else {
         Ok(path)
     }

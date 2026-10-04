@@ -41,6 +41,8 @@ impl<T> Ready<T> for Certain<T> {
 pub struct Uninit<T>(core::mem::MaybeUninit<T>);
 impl<T> Uninit<T> {
     #[inline]
+    // Keep the explicit pair `uninit` / `new` for uninitialized / initialized storage.
+    #[allow(clippy::self_named_constructors)]
     pub const fn uninit() -> Self {
         Self(core::mem::MaybeUninit::uninit())
     }
@@ -68,6 +70,11 @@ impl False {
         Self(false)
     }
 }
+impl core::default::Default for False {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Ready<bool> for False {
     fn into_inner(self) -> bool {
         self.0
@@ -82,6 +89,11 @@ impl True {
         Self(true)
     }
 }
+impl core::default::Default for True {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Ready<bool> for True {
     fn into_inner(self) -> bool {
         self.0
@@ -94,6 +106,11 @@ impl<T> None<T> {
     #[inline]
     pub const fn new() -> None<T> {
         Self(Option::None)
+    }
+}
+impl<T> core::default::Default for None<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 impl<T> Ready<Option<T>> for None<T> {
@@ -130,6 +147,11 @@ impl<T> Vec<T> {
     #[inline]
     pub fn extend<Iter: core::iter::IntoIterator<Item = T>>(&mut self, iter: Iter) {
         self.0.extend(iter)
+    }
+}
+impl<T> core::default::Default for Vec<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 impl<T> Ready<std::vec::Vec<T>> for Vec<T> {
@@ -192,6 +214,8 @@ mod tests {
         assert!(True::new().0);
         assert!(!False::new().into_inner());
         assert!(True::new().into_inner());
+        assert!(!False::default().into_inner());
+        assert!(True::default().into_inner());
     }
 
     #[test]
@@ -200,6 +224,7 @@ mod tests {
         assert_eq!(Some::new(7).0, Option::Some(7));
         assert_eq!(None::<u8>::new().into_inner(), Option::None);
         assert_eq!(Some::new(8).into_inner(), Option::Some(8));
+        assert_eq!(None::<u8>::default().into_inner(), Option::None);
     }
 
     #[test]
@@ -210,6 +235,7 @@ mod tests {
 
         assert_eq!(values.0, std::vec![1, 2, 3]);
         assert_eq!(values.into_inner(), std::vec![1, 2, 3]);
+        assert!(Vec::<u8>::default().into_inner().is_empty());
     }
 
     #[test]
@@ -226,9 +252,7 @@ mod tests {
 
     #[test]
     fn uninitialized_string_storage_can_be_dropped() {
-        let storage = Uninit::<String>::uninit();
-
-        drop(storage);
+        let _storage = Uninit::<String>::uninit();
     }
 
     #[test]

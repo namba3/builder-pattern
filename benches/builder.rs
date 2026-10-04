@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+// The benchmark baseline intentionally measures repeated Vec::push calls.
+#![allow(clippy::vec_init_then_push)]
 
 use builder_pattern_derive::Builder;
 use std::hint::black_box;

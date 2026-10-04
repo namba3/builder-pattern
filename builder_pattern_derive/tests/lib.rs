@@ -49,7 +49,7 @@ fn basic_usage() {
 
     assert_eq!(p.id, 1);
     assert_eq!(p.name, "name");
-    assert_eq!(p.dead, true);
+    assert!(p.dead);
     assert_eq!(p.another_id, Some(2));
     assert_eq!(p.nums, [3, 4, 5, 6, 7, 8]);
 }
@@ -145,7 +145,7 @@ fn bool_field_value_is_false_by_default() {
 
     let s = S::builder().build();
 
-    assert_eq!(s.bool, false);
+    assert!(!s.bool);
 }
 
 #[test]
@@ -263,6 +263,7 @@ fn fixed_expression_initializes_a_non_settable_field() {
 }
 
 #[test]
+#[allow(clippy::let_and_return)]
 fn legacy_string_expressions_remain_supported() {
     #[derive(Builder)]
     struct S {

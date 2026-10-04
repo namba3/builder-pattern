@@ -109,7 +109,7 @@ pub(crate) fn impl_builder_with_support_path(
     let mut builder_items = fields
         .named
         .iter()
-        .map(|field| BuilderItem::try_from(field))
+        .map(BuilderItem::try_from)
         .collect::<Result<Vec<_>, _>>()?;
     validate_setter_names(&builder_items)?;
     let mut used_identifiers = IdentCollector::default();
