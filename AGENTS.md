@@ -21,3 +21,9 @@
 - Format Rust changes with `cargo fmt --all`.
 - Run the relevant crate tests; for workspace-wide changes, use `cargo test --workspace`.
 - Review `git diff` to ensure only intended files changed.
+
+## Code Review
+
+When performing a code review, read and follow [REVIEW.md](./REVIEW.md).
+These guidelines apply specifically to code review tasks. For regular
+development tasks, follow the standard instructions in this file.
